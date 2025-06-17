@@ -65,13 +65,6 @@ class SippyAgent:
                 "base_url": self.config.llm_endpoint,
             }
 
-            # For local Ollama endpoints, add model-specific parameters
-            if self.config.is_local_endpoint():
-                llm_kwargs["model_kwargs"] = {
-                    "num_ctx": 32768,  # Set context window to 32k tokens
-                    "num_predict": 2048,  # Max tokens to generate
-                }
-
             # Only add API key if it's provided (needed for OpenAI, not for local endpoints)
             if self.config.openai_api_key:
                 llm_kwargs["openai_api_key"] = self.config.openai_api_key
@@ -81,8 +74,6 @@ class SippyAgent:
 
             if self.config.verbose:
                 logger.info(f"Using ChatOpenAI with base_url: {self.config.llm_endpoint}")
-                if self.config.is_local_endpoint():
-                    logger.info(f"Setting context size to 32768 tokens for local endpoint")
 
             return ChatOpenAI(**llm_kwargs)
     
