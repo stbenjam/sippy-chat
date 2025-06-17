@@ -18,7 +18,7 @@ class SippyProwJobSummaryTool(SippyBaseTool):
     """Tool for getting prow job run summaries from Sippy API."""
     
     name: str = "get_prow_job_summary"
-    description: str = "Get a summary of a prow job run. Input: just the numeric job ID (e.g., 1934795512955801600)"
+    description: str = "Get a summary of a prow job run including URL, TestGrid URL, timing, results, and test failures. Contains all basic job information. Input: just the numeric job ID (e.g., 1934795512955801600)"
     
     # Add sippy_api_url as a proper field
     sippy_api_url: Optional[str] = Field(default=None, description="Sippy API base URL")
@@ -199,8 +199,10 @@ class SippyProwJobSummaryTool(SippyBaseTool):
         # Add useful links
         result += f"**🔗 Links:**\n"
         if url:
+            result += f"**Prow Job URL:** {url}\n"
             result += f"[View Job in Prow]({url})\n"
         if testgrid_url:
+            result += f"**TestGrid URL:** {testgrid_url}\n"
             result += f"[View in TestGrid]({testgrid_url})\n"
 
         return result

@@ -16,12 +16,15 @@ logger = logging.getLogger(__name__)
 
 class SippyLogAnalyzerTool(SippyBaseTool):
     """Tool for analyzing job artifacts and logs from Sippy API using the /api/jobs/artifacts endpoint."""
-    
+
     name: str = "analyze_job_logs"
     description: str = "Search job artifacts for patterns. Input: numeric job ID, optional path_glob and text_regex"
-    
+
     # Add sippy_api_url as a proper field
     sippy_api_url: Optional[str] = Field(default=None, description="Sippy API base URL")
+
+    # Simple cache to prevent redundant API calls
+    _cache: Dict[str, str] = {}
     
     class LogAnalyzerInput(SippyToolInput):
         prow_job_run_id: str = Field(description="Numeric prow job run ID only (e.g., 1934795512955801600)")
@@ -37,16 +40,16 @@ class SippyLogAnalyzerTool(SippyBaseTool):
     
     args_schema: Type[SippyToolInput] = LogAnalyzerInput
     
-    def _run(self, prow_job_run_id: str, path_glob: str = "*build-log*", 
-             text_regex: str = "[Ee]rror|[Ff]ail", 
+    def _run(self, prow_job_run_id: str, path_glob: str = "*build-log*",
+             text_regex: str = "[Ee]rror|[Ff]ail",
              sippy_api_url: Optional[str] = None) -> str:
         """Fetch and analyze job artifacts from Sippy API."""
         # Use provided URL or fall back to instance URL
         api_url = sippy_api_url or self.sippy_api_url
-        
+
         if not api_url:
             return "Error: No Sippy API URL configured. Please set SIPPY_API_URL environment variable or provide sippy_api_url parameter."
-        
+
         # Clean and validate the job ID - ensure it's just the numeric ID
         clean_job_id = str(prow_job_run_id).strip()
         # Extract just the numeric part if there's extra text
@@ -56,6 +59,12 @@ class SippyLogAnalyzerTool(SippyBaseTool):
             clean_job_id = job_id_match.group(1)
         elif not clean_job_id.isdigit():
             return f"Error: Invalid job ID format. Expected numeric ID, got: {prow_job_run_id}"
+
+        # Create cache key to prevent redundant calls
+        cache_key = f"{clean_job_id}:{path_glob}:{text_regex}"
+        if cache_key in self._cache:
+            logger.info(f"Returning cached result for {cache_key}")
+            return f"[CACHED RESULT]\n{self._cache[cache_key]}"
         
         # Construct the API endpoint
         endpoint = f"{api_url.rstrip('/')}/api/jobs/artifacts"
@@ -76,9 +85,14 @@ class SippyLogAnalyzerTool(SippyBaseTool):
                 
                 # The response should be JSON containing the matched artifacts
                 data = response.json()
-                
+
                 # Format the response for better readability
-                return format_log_analysis(data, clean_job_id, path_glob, text_regex)
+                result = format_log_analysis(data, clean_job_id, path_glob, text_regex)
+
+                # Cache the result to prevent redundant calls
+                self._cache[cache_key] = result
+
+                return result
                 
         except httpx.HTTPStatusError as e:
             logger.error(f"HTTP error analyzing logs: {e}")

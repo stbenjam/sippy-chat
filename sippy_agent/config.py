@@ -54,7 +54,7 @@ class Config(BaseModel):
     
     # Agent Configuration
     max_iterations: int = Field(
-        default=10,
+        default=15,
         description="Maximum number of iterations for the Re-Act agent"
     )
     

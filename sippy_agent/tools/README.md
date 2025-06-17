@@ -13,6 +13,7 @@ tools/
 ├── sippy_log_analyzer.py      # Log analysis tool
 ├── jira_incidents.py          # Jira incident tracking tool
 ├── release_payloads.py        # OpenShift release payload tool
+├── payload_details.py         # Detailed payload analysis tool
 ├── placeholder_tools.py       # Placeholder tools for future features
 ├── test_analysis_helpers.py   # Helper functions for test failure analysis
 └── log_analysis_helpers.py    # Helper functions for log pattern analysis
@@ -26,6 +27,7 @@ tools/
 
 ### Release Management Tools
 - **SippyReleasePayloadTool** (`release_payloads.py`): Queries OpenShift release controller API for payload information, including nightly and CI streams with status tracking
+- **SippyPayloadDetailsTool** (`payload_details.py`): Gets detailed information about specific payloads including blocking jobs, PRs, upgrade results, and failure analysis
 
 ### External Integration Tools
 - **SippyJiraIncidentTool** (`jira_incidents.py`): Queries Jira for known open incidents in the TRT project to correlate with job failures
