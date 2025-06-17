@@ -97,17 +97,24 @@ You: help
 ```
 sippy-chat/
 ├── sippy_agent/
-│   ├── __init__.py          # Package initialization
-│   ├── agent.py             # Core Re-Act agent
-│   ├── cli.py               # Command-line interface
-│   ├── config.py            # Configuration management
+│   ├── __init__.py              # Package initialization
+│   ├── agent.py                 # Core Re-Act agent
+│   ├── cli.py                   # Command-line interface
+│   ├── config.py                # Configuration management
 │   └── tools/
-│       ├── __init__.py      # Tools package
-│       └── base.py          # Base tool classes
-├── main.py                  # Entry point
-├── requirements.txt         # Dependencies
-├── .env.example            # Environment template
-└── README.md               # This file
+│       ├── __init__.py          # Tools package exports
+│       ├── README.md            # Tools documentation
+│       ├── base_tool.py         # Base tool classes
+│       ├── sippy_job_summary.py # Job summary tool
+│       ├── sippy_log_analyzer.py# Log analysis tool
+│       ├── jira_incidents.py    # Jira incident tool
+│       ├── placeholder_tools.py # Future tools
+│       ├── test_analysis_helpers.py # Test analysis utilities
+│       └── log_analysis_helpers.py  # Log analysis utilities
+├── main.py                      # Entry point
+├── requirements.txt             # Dependencies
+├── .env.example                # Environment template
+└── README.md                   # This file
 ```
 
 ### Components
