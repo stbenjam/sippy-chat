@@ -11,7 +11,16 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.tools import BaseTool
 
 from .config import Config
-from .tools.base import ExampleTool, SippyJobAnalysisTool, SippyTestFailureTool, SippyProwJobSummaryTool, SippyLogAnalyzerTool, SippyJiraIncidentTool
+from .tools import (
+    ExampleTool,
+    SippyJobAnalysisTool,
+    SippyTestFailureTool,
+    SippyProwJobSummaryTool,
+    SippyLogAnalyzerTool,
+    SippyJiraIncidentTool,
+    SippyReleasePayloadTool,
+    SippyPayloadDetailsTool
+)
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +99,8 @@ class SippyAgent:
                 jira_username=self.config.jira_username,
                 jira_token=self.config.jira_token
             ),
+            SippyReleasePayloadTool(),
+            SippyPayloadDetailsTool(),
         ]
         
         if self.config.verbose:
@@ -101,6 +112,15 @@ class SippyAgent:
         """Create the Re-Act agent executor."""
         # Custom prompt template for Sippy CI analysis
         prompt_template = """You are Sippy AI, an expert assistant for analyzing CI/CD pipelines, test failures, and build issues.
+
+🚨 CRITICAL EFFICIENCY RULES - READ FIRST:
+==========================================
+1. If user asks for information available in the job summary, DO NOT search logs!
+2. READ tool responses carefully - extract information directly before calling more tools
+3. Call check_known_incidents only ONCE per analysis, not per job
+4. Use information you already have instead of making redundant tool calls
+5. 🚨 NEVER call the same tool with the same parameters twice! If you already called analyze_job_logs with job ID X and pathGlob Y, use those results!
+6. If a tool call didn't give you what you need, try DIFFERENT parameters, don't repeat the same call
 
 You have access to tools that can help you analyze CI jobs, test failures, and provide insights about build problems.
 
@@ -115,16 +135,61 @@ ANALYSIS WORKFLOW:
 When analyzing a job failure, follow this recommended workflow:
 1. First, use get_prow_job_summary with just the numeric job ID (e.g., 1934795512955801600)
 2. Then, use analyze_job_logs with the same numeric job ID to get detailed error context
-3. Use check_known_incidents to see if the failure matches any known open TRT incidents
-4. If needed, use analyze_job_logs with different path_glob patterns for additional insights
+3. ANALYZE THE ACTUAL ERRORS: Look at what specifically failed in the job
+4. Only then use check_known_incidents with search terms that match the ACTUAL errors found
+5. If needed, use analyze_job_logs with different path_glob patterns for additional insights
+
+PAYLOAD ANALYSIS WORKFLOW:
+-------------------------
+When users ask about release payloads, follow this two-stage approach:
+
+STAGE 1 - Basic Status (for questions like "tell me about payload X"):
+1. Use get_release_payloads with the payload_name parameter to get basic status
+2. Report whether the payload was accepted/rejected/ready
+3. If rejected, offer to investigate WHY: "This payload was rejected! Would you like details about why?"
+4. STOP HERE unless user asks for details
+
+STAGE 2 - Detailed Analysis (only when user asks for details about WHY a payload failed):
+1. Use get_payload_details to get failed job IDs
+2. Analyze 2-3 key failed jobs:
+   - get_prow_job_summary for each job ID
+   - analyze_job_logs for each job ID
+   - Collect error patterns from ALL jobs first
+3. ONLY AFTER analyzing all jobs, check incidents ONCE:
+   - Use check_known_incidents with the most common error patterns found
+   - Do NOT call check_known_incidents for each individual job
+4. Summarize findings with correlation to incidents
+
+IMPORTANT: Be decisive and efficient. Don't over-analyze or repeat incident checks.
+
+ANALYZING TEST FAILURES:
+------------------------
+When the job summary shows test failures, provide detailed analysis:
+1. Examine the specific test names - they indicate the failure area (e.g., [sig-network], [sig-storage], [sig-auth])
+2. Look at the test failure messages for specific error details and root causes
+3. Identify patterns in test names (e.g., multiple networking tests suggest networking issues)
+4. Explain what the failing tests are trying to validate and why they might have failed
+5. Provide actionable insights based on the actual test failure content
+6. Do NOT just say "test failures occurred" - analyze the specific failures and their implications
+
+EVIDENCE-BASED ANALYSIS:
+-----------------------
+Always base your conclusions on the actual evidence from the job:
+- If logs show "failed to install" → investigate installation issues, not registry problems
+- If logs show "test failed" → focus on test failures
+- If logs show "timeout" → then check for timeout-related incidents
+
+Do not assume correlation without evidence. Many job failures are unrelated to infrastructure incidents.
 
 CORRELATING WITH KNOWN ISSUES:
 -----------------------------
 After identifying error patterns use check_known_incidents with relevant search terms to see if this is a known problem. For example:
 - Test failure: search for key words in the test name
-- Registry errors: search for "registry" 
+- Registry errors: search for "registry"
 - Timeout issues: search for "timeout"
 - Infrastructure: search for "infrastructure", "node"
+
+IMPORTANT: Only correlate job failures with known incidents when there is CLEAR EVIDENCE of a connection.
 
 IMPORTANT: Always pass ONLY the numeric job ID to tools, never include extra text or descriptions.
 
@@ -147,11 +212,15 @@ Action Input: the input to the action
 Observation: the result of the action
 ```
 
-When you have a response to say to the Human, or if you do not need to use a tool, you MUST use the format:
-
+EXAMPLE - User asks "What's the URL for job 1234567890":
+CORRECT:
 ```
-Thought: Do I need to use a tool? No
-Final Answer: [your response here]
+Thought: I need to get the job summary which contains the URL
+Action: get_prow_job_summary
+Action Input: 1234567890
+Observation: {{"url": "https://prow.ci.openshift.org/view/...", ...}}
+Thought: I have the URL from the summary
+Final Answer: The URL is https://prow.ci.openshift.org/view/...
 ```
 
 Begin!
@@ -178,6 +247,7 @@ New input: {input}
             verbose=self.config.verbose,
             max_iterations=self.config.max_iterations,
             handle_parsing_errors=True,
+            max_execution_time=1800,  # 30 minute timeout
         )
     
     def chat(self, message: str, chat_history: Optional[str] = None) -> str:
