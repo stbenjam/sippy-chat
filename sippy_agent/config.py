@@ -25,6 +25,11 @@ class Config(BaseModel):
         description="OpenAI API key (optional, not needed for local endpoints)"
     )
 
+    google_api_key: Optional[str] = Field(
+        default_factory=lambda: os.getenv("GOOGLE_API_KEY"),
+        description="Google API key for Gemini models (required when using Gemini)"
+    )
+
     model_name: str = Field(
         default_factory=lambda: os.getenv("MODEL_NAME", "llama3.1:8b"),
         description="Model name to use (e.g., llama3.1:8b for Ollama, gpt-4 for OpenAI)"
@@ -76,6 +81,10 @@ class Config(BaseModel):
         """Check if the endpoint is a local endpoint."""
         return "localhost" in self.llm_endpoint or "127.0.0.1" in self.llm_endpoint
 
+    def is_gemini_model(self) -> bool:
+        """Check if the model is a Gemini model."""
+        return self.model_name.startswith("gemini")
+
     def validate_required_settings(self) -> None:
         """Validate that required settings are present."""
         # Only require OpenAI API key if using OpenAI's endpoint
@@ -83,6 +92,13 @@ class Config(BaseModel):
             raise ValueError(
                 "OpenAI API key is required when using OpenAI endpoint. "
                 "Set OPENAI_API_KEY environment variable or use a local endpoint."
+            )
+
+        # Require Google API key if using Gemini models
+        if self.is_gemini_model() and not self.google_api_key:
+            raise ValueError(
+                "Google API key is required when using Gemini models. "
+                "Set GOOGLE_API_KEY environment variable."
             )
     
     @classmethod

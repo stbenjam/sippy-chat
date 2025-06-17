@@ -3,10 +3,11 @@ Core Re-Act agent implementation for Sippy.
 """
 
 import logging
-from typing import List, Optional
+from typing import List, Optional, Union
 from langchain.agents import AgentExecutor, create_react_agent
 from langchain.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.tools import BaseTool
 
 from .config import Config
@@ -25,27 +26,56 @@ class SippyAgent:
         self.tools = self._create_tools()
         self.agent_executor = self._create_agent_executor()
     
-    def _create_llm(self) -> ChatOpenAI:
+    def _create_llm(self) -> Union[ChatOpenAI, ChatGoogleGenerativeAI]:
         """Create the language model instance."""
-        # Prepare kwargs for ChatOpenAI
-        llm_kwargs = {
-            "model": self.config.model_name,
-            "temperature": self.config.temperature,
-            "base_url": self.config.llm_endpoint,
-        }
-
-        # Only add API key if it's provided (needed for OpenAI, not for local endpoints)
-        if self.config.openai_api_key:
-            llm_kwargs["openai_api_key"] = self.config.openai_api_key
-        else:
-            # For local endpoints like Ollama, use a dummy key
-            llm_kwargs["openai_api_key"] = "dummy-key"
-
         if self.config.verbose:
             logger.info(f"Creating LLM with endpoint: {self.config.llm_endpoint}")
             logger.info(f"Using model: {self.config.model_name}")
 
-        return ChatOpenAI(**llm_kwargs)
+        # Use ChatGoogleGenerativeAI for Gemini models
+        if self.config.is_gemini_model():
+            if not self.config.google_api_key:
+                raise ValueError("Google API key is required for Gemini models")
+
+            llm_kwargs = {
+                "model": self.config.model_name,
+                "temperature": self.config.temperature,
+                "google_api_key": self.config.google_api_key,
+            }
+
+            if self.config.verbose:
+                logger.info(f"Using ChatGoogleGenerativeAI for Gemini model")
+
+            return ChatGoogleGenerativeAI(**llm_kwargs)
+
+        # Use ChatOpenAI for OpenAI and Ollama endpoints
+        else:
+            llm_kwargs = {
+                "model": self.config.model_name,
+                "temperature": self.config.temperature,
+                "base_url": self.config.llm_endpoint,
+            }
+
+            # For local Ollama endpoints, add model-specific parameters
+            if self.config.is_local_endpoint():
+                llm_kwargs["model_kwargs"] = {
+                    "num_ctx": 32768,  # Set context window to 32k tokens
+                    "num_predict": 2048,  # Max tokens to generate
+                }
+
+            # Only add API key if it's provided (needed for OpenAI, not for local endpoints)
+            if self.config.openai_api_key:
+                llm_kwargs["openai_api_key"] = self.config.openai_api_key
+            else:
+                # For local endpoints like Ollama, use a dummy key
+                llm_kwargs["openai_api_key"] = "dummy-key"
+
+            if self.config.verbose:
+                logger.info(f"Using ChatOpenAI with base_url: {self.config.llm_endpoint}")
+                if self.config.is_local_endpoint():
+                    logger.info(f"Setting context size to 32768 tokens for local endpoint")
+
+            return ChatOpenAI(**llm_kwargs)
     
     def _create_tools(self) -> List[BaseTool]:
         """Create the list of tools available to the agent."""
@@ -74,7 +104,11 @@ class SippyAgent:
 
 You have access to tools that can help you analyze CI jobs, test failures, and provide insights about build problems.
 
-When users ask about CI issues, use the available tools to gather information and provide detailed analysis.
+When users ask about CI issues, use the available tools to gather information and provide detailed analysis. Pay attention to
+the user's query and ensure you are answering the direction question they gave you.
+
+Example: If the question is answerable by the first example, you don't need to continue on.
+
 
 ANALYSIS WORKFLOW:
 -----------------
@@ -86,12 +120,17 @@ When analyzing a job failure, follow this recommended workflow:
 
 CORRELATING WITH KNOWN ISSUES:
 -----------------------------
-After identifying error patterns (like registry issues, timeouts, etc.), use check_known_incidents with relevant search terms to see if this is a known problem. For example:
-- Registry errors: search for "registry", "build11", "503"
-- Timeout issues: search for "timeout", "hang"
+After identifying error patterns use check_known_incidents with relevant search terms to see if this is a known problem. For example:
+- Test failure: search for key words in the test name
+- Registry errors: search for "registry" 
+- Timeout issues: search for "timeout"
 - Infrastructure: search for "infrastructure", "node"
 
 IMPORTANT: Always pass ONLY the numeric job ID to tools, never include extra text or descriptions.
+
+IMPORTANT: Only correlate with a known issue when you're sure it's related, make sure the failure symptoms and incident description match.
+
+IMPORTANT: Don't call the same tool with the same arguments multiple times.
 
 TOOLS:
 ------

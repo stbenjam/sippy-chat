@@ -46,6 +46,12 @@ MODEL_NAME=gpt-3.5-turbo
 OPENAI_API_KEY=your_openai_api_key_here
 ```
 
+**For Google Gemini:**
+```env
+MODEL_NAME=gemini-1.5-pro
+GOOGLE_API_KEY=your_google_api_key_here
+```
+
 ### 3. Run the Agent
 
 ```bash
@@ -60,6 +66,9 @@ python main.py --verbose --model llama3.1:70b --temperature 0.2
 
 # Using OpenAI
 python main.py --model gpt-4 --endpoint https://api.openai.com/v1
+
+# Using Google Gemini
+python main.py --model gemini-1.5-pro
 ```
 
 ## Usage
