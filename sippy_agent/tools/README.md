@@ -12,6 +12,7 @@ tools/
 ├── sippy_job_summary.py       # Job run summary tool
 ├── sippy_log_analyzer.py      # Log analysis tool
 ├── jira_incidents.py          # Jira incident tracking tool
+├── release_payloads.py        # OpenShift release payload tool
 ├── placeholder_tools.py       # Placeholder tools for future features
 ├── test_analysis_helpers.py   # Helper functions for test failure analysis
 └── log_analysis_helpers.py    # Helper functions for log pattern analysis
@@ -22,6 +23,9 @@ tools/
 ### Core Sippy Tools
 - **SippyProwJobSummaryTool** (`sippy_job_summary.py`): Gets comprehensive job run summaries including timing, results, test failures, and configuration details
 - **SippyLogAnalyzerTool** (`sippy_log_analyzer.py`): Analyzes job artifacts and logs for error patterns, with intelligent categorization of issues
+
+### Release Management Tools
+- **SippyReleasePayloadTool** (`release_payloads.py`): Queries OpenShift release controller API for payload information, including nightly and CI streams with status tracking
 
 ### External Integration Tools
 - **SippyJiraIncidentTool** (`jira_incidents.py`): Queries Jira for known open incidents in the TRT project to correlate with job failures

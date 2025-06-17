@@ -16,7 +16,8 @@ from .tools import (
     SippyTestFailureTool,
     SippyProwJobSummaryTool,
     SippyLogAnalyzerTool,
-    SippyJiraIncidentTool
+    SippyJiraIncidentTool,
+    SippyReleasePayloadTool
 )
 
 logger = logging.getLogger(__name__)
@@ -67,6 +68,7 @@ class SippyAgent:
                 jira_username=self.config.jira_username,
                 jira_token=self.config.jira_token
             ),
+            SippyReleasePayloadTool(),
         ]
         
         if self.config.verbose:
