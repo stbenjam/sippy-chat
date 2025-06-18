@@ -3,12 +3,15 @@ Core Re-Act agent implementation for Sippy.
 """
 
 import logging
-from typing import List, Optional, Union
+import re
+from typing import List, Optional, Union, Dict, Any, Callable
 from langchain.agents import AgentExecutor, create_react_agent
 from langchain.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.tools import BaseTool
+from langchain.callbacks.base import BaseCallbackHandler
+from langchain.schema import AgentAction, AgentFinish
 
 from .config import Config
 from .tools import (
@@ -23,6 +26,67 @@ from .tools import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class StreamingThinkingHandler(BaseCallbackHandler):
+    """Callback handler to stream thinking process in real-time."""
+
+    def __init__(self, thinking_callback: Optional[Callable[[str, str, str, str], None]] = None):
+        """Initialize with optional callback for streaming thoughts."""
+        self.thinking_callback = thinking_callback
+        self.step_count = 0
+
+    def on_agent_action(self, action: AgentAction, **kwargs) -> None:
+        """Called when agent takes an action."""
+        if self.thinking_callback:
+            self.step_count += 1
+
+            # Extract thought from the action log
+            thought = self._extract_thought_from_log(action.log)
+            action_name = action.tool
+            action_input = str(action.tool_input)
+
+            # Skip if this is an error/exception action
+            if action_name in ['_Exception', 'Invalid', 'Error']:
+                return
+
+            # Stream the thinking step
+            self.thinking_callback(thought, action_name, action_input, "")
+
+    def on_tool_end(self, output: str, **kwargs) -> None:
+        """Called when a tool finishes."""
+        if self.thinking_callback:
+            # Skip error outputs
+            if "Invalid" in output or "Error" in output or "_Exception" in output:
+                return
+            # Stream the observation
+            self.thinking_callback("", "", "", output)
+
+    def _extract_thought_from_log(self, log: str) -> str:
+        """Extract the thought portion from the action log."""
+        if not log:
+            return "Processing..."
+
+        # Look for "Thought:" pattern in the log
+        thought_match = re.search(r'Thought:\s*(.*?)(?=\nAction:|Action:|$)', log, re.DOTALL | re.IGNORECASE)
+        if thought_match:
+            return thought_match.group(1).strip()
+
+        # Look for reasoning before Action:
+        action_split = log.split('Action:', 1)
+        if len(action_split) > 1:
+            potential_thought = action_split[0].strip()
+            if potential_thought and not potential_thought.startswith('Action'):
+                return potential_thought
+
+        # If no explicit thought found, try to extract reasoning from the beginning
+        lines = log.split('\n')
+        for line in lines:
+            line = line.strip()
+            if line and not line.startswith('Action:') and not line.startswith('Action Input:'):
+                return line
+
+        return "Analyzing..."
 
 
 class SippyAgent:
@@ -112,6 +176,8 @@ class SippyAgent:
 4. Use information you already have instead of making redundant tool calls
 5. 🚨 NEVER call the same tool with the same parameters twice! If you already called analyze_job_logs with job ID X and pathGlob Y, use those results!
 6. If a tool call didn't give you what you need, try DIFFERENT parameters, don't repeat the same call
+7. 🚨 If a tool fails or gives an error, DO NOT retry it immediately - either try a different tool or provide an answer based on what you know
+8. 🚨 For simple questions that don't require tools (like "hello", "hi", "what tools do you have", greetings), answer directly with "Final Answer:" - DO NOT use any actions or tools
 
 You have access to tools that can help you analyze CI jobs, and test failures.
 
@@ -195,14 +261,18 @@ You have access to the following tools:
 
 {tools}
 
-To use a tool, please use the following format:
+🚨 CRITICAL FORMAT REQUIREMENTS:
+================================
+You MUST follow this EXACT format for every tool use:
 
-```
-Thought: Do I need to use a tool? Yes
-Action: the action to take, should be one of [{tool_names}]
-Action Input: the input to the action
-Observation: the result of the action
-```
+Thought: [Your reasoning here]
+Action: [EXACT tool name from the list]
+Action Input: [Input parameters]
+Observation: [Tool result will appear here]
+
+🚨 TOOL NAMES - Use EXACTLY as written from [{tool_names}]:
+
+🚨 DO NOT use any other action names like "_Exception" or variations!
 
 EXAMPLE - User asks "What's the URL for job 1234567890":
 CORRECT:
@@ -213,6 +283,20 @@ Action Input: 1234567890
 Observation: {{"url": "https://prow.ci.openshift.org/view/...", ...}}
 Thought: I have the URL from the summary
 Final Answer: The URL is https://prow.ci.openshift.org/view/...
+```
+
+🚨 If you don't need tools, provide a direct Final Answer without any Action.
+
+EXAMPLE - User says "hello":
+CORRECT:
+```
+Final Answer: Hello! I'm Sippy AI, your expert assistant for analyzing CI job and test failures. How can I help you today?
+```
+
+WRONG - Don't do this for simple greetings:
+```
+Thought: I need to respond to the greeting
+Action: [any tool name]
 ```
 
 Begin!
@@ -240,20 +324,126 @@ New input: {input}
             max_iterations=self.config.max_iterations,
             handle_parsing_errors=True,
             max_execution_time=1800,  # 30 minute timeout
+            return_intermediate_steps=True,  # Enable intermediate steps for thinking display
         )
     
-    def chat(self, message: str, chat_history: Optional[str] = None) -> str:
-        """Process a chat message and return the agent's response."""
+    def chat(self, message: str, chat_history: Optional[str] = None,
+             thinking_callback: Optional[Callable[[str, str, str, str], None]] = None) -> Union[str, Dict[str, Any]]:
+        """Process a chat message and return the agent's response.
+
+        Args:
+            message: The user's message
+            chat_history: Previous conversation context
+            thinking_callback: Optional callback for streaming thoughts (thought, action, input, observation)
+        """
         try:
+            # Set up callbacks for streaming thinking
+            callbacks = []
+            if self.config.show_thinking and thinking_callback:
+                streaming_handler = StreamingThinkingHandler(thinking_callback)
+                callbacks.append(streaming_handler)
+
             result = self.agent_executor.invoke({
                 "input": message,
                 "chat_history": chat_history or ""
-            })
-            return result["output"]
+            }, config={"callbacks": callbacks})
+
+            if self.config.show_thinking:
+                # Parse the intermediate steps to extract thinking process
+                thinking_steps = self._parse_thinking_steps(result)
+
+                # Debug: Always log when thinking is enabled
+                logger.info(f"Thinking enabled - found {len(thinking_steps)} steps")
+                logger.info(f"Result keys: {list(result.keys())}")
+
+                return {
+                    "output": result["output"],
+                    "thinking_steps": thinking_steps
+                }
+            else:
+                return result["output"]
         except Exception as e:
             logger.error(f"Error processing message: {e}")
-            return f"I encountered an error while processing your request: {str(e)}"
-    
+            error_msg = f"I encountered an error while processing your request: {str(e)}"
+            if self.config.show_thinking:
+                return {
+                    "output": error_msg,
+                    "thinking_steps": []
+                }
+            else:
+                return error_msg
+
+    def _parse_thinking_steps(self, result: Dict[str, Any]) -> List[Dict[str, str]]:
+        """Parse the agent's intermediate steps to extract thinking process."""
+        thinking_steps = []
+
+        # Get intermediate steps from the result
+        intermediate_steps = result.get("intermediate_steps", [])
+
+        # Always log when thinking is enabled (not just verbose)
+        if self.config.show_thinking:
+            logger.info(f"Parsing thinking: Found {len(intermediate_steps)} intermediate steps")
+            logger.info(f"Available result keys: {list(result.keys())}")
+
+        for i, step in enumerate(intermediate_steps):
+            if self.config.verbose:
+                logger.info(f"Step {i}: {type(step)} with length {len(step) if hasattr(step, '__len__') else 'N/A'}")
+
+            if len(step) >= 2:
+                action = step[0]
+                observation = step[1]
+
+                # Extract action details
+                action_name = getattr(action, 'tool', getattr(action, 'name', 'Unknown'))
+                action_input = getattr(action, 'tool_input', getattr(action, 'input', {}))
+                action_log = getattr(action, 'log', '')
+
+                # Skip error/exception actions in the final display too
+                if action_name in ['_Exception', 'Invalid', 'Error'] or 'Invalid' in str(observation):
+                    continue
+
+                if self.config.verbose:
+                    logger.info(f"Action: {action_name}, Input: {action_input}")
+                    logger.info(f"Action log: {action_log[:100]}...")
+
+                # Parse thought from action log if available
+                thought = self._extract_thought_from_log(action_log)
+
+                thinking_steps.append({
+                    "thought": thought,
+                    "action": action_name,
+                    "action_input": str(action_input),
+                    "observation": str(observation)[:500] + "..." if len(str(observation)) > 500 else str(observation)
+                })
+
+        return thinking_steps
+
+    def _extract_thought_from_log(self, log: str) -> str:
+        """Extract the thought portion from the action log."""
+        if not log:
+            return "Processing..."
+
+        # Look for "Thought:" pattern in the log
+        thought_match = re.search(r'Thought:\s*(.*?)(?=\nAction:|Action:|$)', log, re.DOTALL | re.IGNORECASE)
+        if thought_match:
+            return thought_match.group(1).strip()
+
+        # Look for reasoning before Action:
+        action_split = log.split('Action:', 1)
+        if len(action_split) > 1:
+            potential_thought = action_split[0].strip()
+            if potential_thought and not potential_thought.startswith('Action'):
+                return potential_thought
+
+        # If no explicit thought found, try to extract reasoning from the beginning
+        lines = log.split('\n')
+        for line in lines:
+            line = line.strip()
+            if line and not line.startswith('Action:') and not line.startswith('Action Input:'):
+                return line
+
+        return "Analyzing..."
+
     def add_tool(self, tool: BaseTool) -> None:
         """Add a new tool to the agent."""
         self.tools.append(tool)

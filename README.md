@@ -5,6 +5,7 @@ A LangChain Re-Act AI Agent for analyzing CI/CD pipelines, test failures, and bu
 ## Features
 
 - 🤖 **LangChain Re-Act Agent**: Intelligent reasoning and action-taking capabilities
+- 🧠 **Thinking Display**: Optional visualization of the agent's thought process
 - 🔧 **CI/CD Analysis**: Tools for analyzing jobs, test failures, and build patterns
 - 💬 **Interactive CLI**: Rich command-line interface with chat functionality
 - 🛠️ **Extensible Tools**: Modular tool system ready for Sippy API integration
@@ -61,15 +62,35 @@ python main.py
 Or with options:
 
 ```bash
-# Using Ollama with a different model
-python main.py --verbose --model llama3.1:70b --temperature 0.2
+# Using Ollama with a different model and thinking display
+python main.py --verbose --thinking --model llama3.1:70b --temperature 0.2
 
-# Using OpenAI
-python main.py --model gpt-4 --endpoint https://api.openai.com/v1
+# Using OpenAI with thinking process visible
+python main.py --thinking --model gpt-4 --endpoint https://api.openai.com/v1
 
 # Using Google Gemini
 python main.py --model gemini-1.5-pro
 ```
+
+## Thinking Display
+
+The agent supports a "thinking display" mode that shows the LLM's reasoning process:
+
+```bash
+# Enable thinking display from command line
+python main.py --thinking
+
+# Or toggle it during runtime
+> thinking
+```
+
+When enabled, you'll see:
+- 💭 **Thoughts**: The agent's reasoning about what to do next
+- 🔧 **Actions**: Which tools the agent decides to use
+- 📝 **Inputs**: The parameters passed to each tool
+- 👁️ **Observations**: The results returned from each tool
+
+This is helpful for understanding how the agent approaches complex analysis tasks and debugging when things don't work as expected.
 
 ## Usage
 
@@ -91,6 +112,7 @@ You: help
 - `tools` - List available tools
 - `history` - Show chat history
 - `clear` - Clear chat history
+- `thinking` - Toggle showing the agent's thinking process
 - `quit` / `exit` - Exit the application
 
 ### Example Queries

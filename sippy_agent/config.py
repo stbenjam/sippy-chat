@@ -59,7 +59,7 @@ class Config(BaseModel):
     
     # Agent Configuration
     max_iterations: int = Field(
-        default=15,
+        default=8,
         description="Maximum number of iterations for the Re-Act agent"
     )
     
@@ -69,8 +69,13 @@ class Config(BaseModel):
     )
     
     temperature: float = Field(
-        default=0.1,
+        default=0.0,
         description="Temperature setting for the language model"
+    )
+
+    show_thinking: bool = Field(
+        default=False,
+        description="Show the agent's thinking process (thoughts, actions, observations)"
     )
     
     def is_openai_endpoint(self) -> bool:
