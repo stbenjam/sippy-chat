@@ -146,12 +146,10 @@ class SippyCLI:
                     step_content.append("📝 Input: ", style="bold yellow")
                     step_content.append(f"{step['action_input']}\n\n", style="yellow")
 
-            # Add observation (truncated if too long)
+            # Add observation
             if step.get("observation"):
                 step_content.append("👁️ Observation: ", style="bold magenta")
                 observation = step["observation"]
-                if len(observation) > 200:
-                    observation = observation[:200] + "..."
                 step_content.append(observation, style="magenta")
 
             # Display step panel
@@ -215,8 +213,7 @@ class SippyCLI:
                     step_content.append(f"{last_step['action_input']}\n\n", style="yellow")
 
                 step_content.append("👁️ Observation: ", style="bold magenta")
-                obs_text = observation[:200] + "..." if len(observation) > 200 else observation
-                step_content.append(obs_text, style="magenta")
+                step_content.append(observation, style="magenta")
 
                 # Display updated step panel
                 console.print(Panel(

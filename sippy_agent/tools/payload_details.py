@@ -18,7 +18,7 @@ class SippyPayloadDetailsTool(SippyBaseTool):
     """Tool for getting detailed OpenShift release payload information."""
     
     name: str = "get_payload_details"
-    description: str = "Get detailed failure information for a specific OpenShift release payload including failed blocking jobs and their prow job IDs. Use this ONLY when user asks for details about WHY a payload failed. After getting this data, systematically analyze each failed job using get_prow_job_summary and analyze_job_logs. For basic payload status, use get_release_payloads first. Input: payload name (e.g., '4.20.0-0.nightly-2025-06-17-061341')"
+    description: str = "Get detailed failure information for a specific OpenShift release payload including failed blocking jobs and their prow job IDs. Shows which jobs failed but does NOT automatically suggest log analysis. Use this ONLY when user asks for details about WHY a payload failed. For basic payload status, use get_release_payloads first. Input: payload name (e.g., '4.20.0-0.nightly-2025-06-17-061341')"
     
     # Release controller API base URL
     release_controller_url: str = Field(
@@ -192,9 +192,10 @@ class SippyPayloadDetailsTool(SippyBaseTool):
                             result += f"  Job ID: `{prow_job_id}`\n"
                         result += "\n"
 
-                    # Include analysis suggestions for failed jobs only
-                    failed_jobs_dict = {job[0]: {"url": job[2]} for job in failed_jobs}
-                    result += self._suggest_job_analysis(failed_jobs_dict, max_jobs_to_analyze)
+                    # Include analysis suggestions for failed jobs only if requested
+                    if include_job_analysis:
+                        failed_jobs_dict = {job[0]: {"url": job[2]} for job in failed_jobs}
+                        result += self._suggest_job_analysis(failed_jobs_dict, max_jobs_to_analyze)
 
             return result
 

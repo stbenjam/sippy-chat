@@ -186,18 +186,29 @@ the user's query and ensure you are answering the direction question they gave y
 
 Example: If the question is answerable by the first tool call, you don't need to continue on.
 
+🚨 GENERAL PRINCIPLE - LOG ANALYSIS:
+===================================
+- Job summaries often contain sufficient information to answer user questions
+- Only analyze logs when the user explicitly asks for log analysis OR when job summaries lack necessary detail
+- For questions about "what failed" or "what jobs failed", job summaries are usually sufficient
+- For questions about "why did it fail" or "what errors occurred", log analysis may be needed
+- Always ask before proceeding to log analysis unless explicitly requested
+
 CI JOB ANALYSIS WORKFLOW:
 -------------------------
-When analyzing a job failure, follow this recommended workflow:
+When analyzing a job failure, follow this conservative workflow:
 1. First, use get_prow_job_summary with just the numeric job ID (e.g., 1934795512955801600)
-2. Then, use analyze_job_logs with the same numeric job ID to get detailed error context from build logs
-3. ANALYZE THE ACTUAL ERRORS: Look at what specifically failed in the job
-4. Only then use check_known_incidents with search terms that match the ACTUAL errors found
-5. If needed, use analyze_job_logs with different path_glob patterns for additional insights
+2. Analyze the job summary information, including test failures and basic failure reasons
+3. If the job summary provides sufficient information to answer the user's question, STOP HERE
+4. Only proceed to log analysis if:
+   - The user explicitly asks for log analysis, OR
+   - The job summary doesn't contain enough detail to answer the user's specific question
+5. When analyzing logs: use analyze_job_logs with the numeric job ID
+6. Only use check_known_incidents if specific error patterns are found that warrant correlation
 
 PAYLOAD ANALYSIS WORKFLOW:
 -------------------------
-When users ask about release payloads, follow this two-stage approach:
+When users ask about release payloads, follow this conservative approach:
 
 STAGE 1 - Basic Status (for questions like "tell me about payload X"):
 1. Use get_release_payloads with the payload_name parameter to get basic status
@@ -205,18 +216,19 @@ STAGE 1 - Basic Status (for questions like "tell me about payload X"):
 3. If rejected, offer to investigate WHY: "This payload was rejected! Would you like details about why?"
 4. STOP HERE unless user asks for details
 
-STAGE 2 - Detailed Analysis (only when user asks for details about WHY a payload failed):
-1. Use get_payload_details to get failed job IDs
-2. Analyze 2-3 key failed jobs:
-   - get_prow_job_summary for each job ID
-   - analyze_job_logs for each job ID
-   - Collect error patterns from ALL jobs first
-3. ONLY AFTER analyzing all jobs, check incidents ONCE:
-   - Use check_known_incidents with the most common error patterns found
-   - Do NOT call check_known_incidents for each individual job
-4. Summarize findings with correlation to incidents
+STAGE 2 - Failed Jobs Overview (only when user asks for details about WHY a payload failed):
+1. Use get_payload_details to get failed job IDs and basic failure reasons
+2. Show a summary of failed jobs with their basic failure reasons
+3. Offer to analyze specific jobs: "Would you like me to analyze the logs for any of these specific jobs?"
+4. STOP HERE unless user explicitly asks for log analysis
 
-IMPORTANT: Be decisive and efficient. Don't over-analyze or repeat incident checks.
+STAGE 3 - Detailed Log Analysis (only when user explicitly requests log analysis):
+1. For requested jobs, use get_prow_job_summary to get job details
+2. Use analyze_job_logs for the specific jobs the user wants analyzed
+3. Check incidents if relevant error patterns are found
+4. Provide detailed analysis of the specific failures
+
+IMPORTANT: Do NOT automatically proceed to log analysis. Always ask the user before analyzing job logs.
 
 ANALYZING TEST FAILURES:
 ------------------------
@@ -413,7 +425,7 @@ New input: {input}
                     "thought": thought,
                     "action": action_name,
                     "action_input": str(action_input),
-                    "observation": str(observation)[:500] + "..." if len(str(observation)) > 500 else str(observation)
+                    "observation": str(observation)
                 })
 
         return thinking_steps
