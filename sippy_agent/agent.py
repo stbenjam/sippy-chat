@@ -323,7 +323,7 @@ New input: {input}
             verbose=self.config.verbose,
             max_iterations=self.config.max_iterations,
             handle_parsing_errors=True,
-            max_execution_time=1800,  # 30 minute timeout
+            max_execution_time=self.config.max_execution_time,
             return_intermediate_steps=True,  # Enable intermediate steps for thinking display
         )
     

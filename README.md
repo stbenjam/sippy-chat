@@ -172,12 +172,12 @@ Example:
 class MyNewTool(SippyBaseTool):
     name: str = "my_new_tool"
     description: str = "Description of what this tool does"
-    
+
     class MyInput(SippyToolInput):
         param: str = Field(description="Parameter description")
-    
+
     args_schema: Type[BaseModel] = MyInput
-    
+
     def _run(self, param: str) -> str:
         # Implement your tool logic here
         return f"Result for {param}"
@@ -191,26 +191,3 @@ The agent supports various configuration options through environment variables:
 - `MODEL_NAME`: Model name to use (default: llama3.1:8b)
 - `OPENAI_API_KEY`: OpenAI API key (only required when using OpenAI endpoint)
 - `SIPPY_API_URL`: Sippy API base URL (for future use)
-
-## Future Enhancements
-
-- [ ] Sippy API integration for real CI data
-- [ ] Job analysis with log parsing
-- [ ] Test failure pattern detection
-- [ ] Build trend analysis
-- [ ] Integration with popular CI platforms
-- [ ] Web interface option
-- [ ] Persistent chat history
-- [ ] Custom tool plugins
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
-
-## License
-
-[Add your license information here]

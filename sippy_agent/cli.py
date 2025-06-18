@@ -335,7 +335,9 @@ class SippyCLI:
 @click.option('--model', default=None, help='Model name to use (e.g., llama3.1:8b, gpt-4)')
 @click.option('--endpoint', default=None, help='LLM API endpoint')
 @click.option('--temperature', default=None, type=float, help='Temperature for the model')
-def main(verbose: bool, thinking: bool, model: str, endpoint: str, temperature: float) -> None:
+@click.option('--max-iterations', default=None, type=int, help='Maximum number of agent iterations (default: 25)')
+@click.option('--timeout', default=None, type=int, help='Maximum execution time in seconds (default: 1800 = 30 minutes)')
+def main(verbose: bool, thinking: bool, model: str, endpoint: str, temperature: float, max_iterations: int, timeout: int) -> None:
     """Sippy AI Agent - Your CI/CD Analysis Assistant."""
     setup_logging(verbose)
     
@@ -352,6 +354,10 @@ def main(verbose: bool, thinking: bool, model: str, endpoint: str, temperature: 
             config.llm_endpoint = endpoint
         if temperature is not None:
             config.temperature = temperature
+        if max_iterations is not None:
+            config.max_iterations = max_iterations
+        if timeout is not None:
+            config.max_execution_time = timeout
         
         # Create and run CLI
         cli = SippyCLI(config)

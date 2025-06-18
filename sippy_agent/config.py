@@ -59,8 +59,13 @@ class Config(BaseModel):
     
     # Agent Configuration
     max_iterations: int = Field(
-        default=8,
+        default=25,
         description="Maximum number of iterations for the Re-Act agent"
+    )
+
+    max_execution_time: int = Field(
+        default=1800,
+        description="Maximum execution time in seconds for the agent (default: 1800 = 30 minutes)"
     )
     
     verbose: bool = Field(
