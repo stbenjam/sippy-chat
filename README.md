@@ -8,6 +8,7 @@ A LangChain Re-Act AI Agent for analyzing CI/CD pipelines, test failures, and bu
 - 🧠 **Thinking Display**: Optional visualization of the agent's thought process
 - 🔧 **CI/CD Analysis**: Tools for analyzing jobs, test failures, and build patterns
 - 💬 **Interactive CLI**: Rich command-line interface with chat functionality
+- 🌐 **Web API**: REST and WebSocket endpoints for web frontend integration
 - 🛠️ **Extensible Tools**: Modular tool system ready for Sippy API integration
 - ⚙️ **Configurable**: Environment-based configuration management
 
@@ -101,7 +102,27 @@ When enabled, you'll see:
 
 This is helpful for understanding how the agent approaches complex analysis tasks and debugging when things don't work as expected.
 
-## Usage
+## Web Server
+
+The Sippy AI Agent can also run as a web API server for integration with web frontends:
+
+```bash
+# Start the web server
+python web_main.py
+
+# With options
+python web_main.py --port 8080 --thinking --verbose
+```
+
+The web server provides:
+- **REST API** at `http://localhost:8000` for chat interactions
+- **WebSocket streaming** at `ws://localhost:8000/chat/stream` for real-time responses
+- **Interactive API docs** at `http://localhost:8000/docs`
+- **Health check** at `http://localhost:8000/health`
+
+For detailed web server documentation, configuration options, and integration examples, see [docs/WEB_SERVER_README.md](docs/WEB_SERVER_README.md).
+
+## CLI Usage
 
 Once started, you can interact with the Sippy AI Agent through the CLI:
 
@@ -141,6 +162,8 @@ sippy-chat/
 │   ├── agent.py                 # Core Re-Act agent
 │   ├── cli.py                   # Command-line interface
 │   ├── config.py                # Configuration management
+│   ├── web_server.py            # Web API server
+│   ├── api_models.py            # API request/response models
 │   └── tools/
 │       ├── __init__.py          # Tools package exports
 │       ├── README.md            # Tools documentation
@@ -151,7 +174,13 @@ sippy-chat/
 │       ├── placeholder_tools.py # Future tools
 │       ├── test_analysis_helpers.py # Test analysis utilities
 │       └── log_analysis_helpers.py  # Log analysis utilities
-├── main.py                      # Entry point
+├── docs/
+│   ├── GEMINI_SETUP.md          # Google Gemini setup guide
+│   └── WEB_SERVER_README.md     # Web server documentation
+├── examples/
+│   └── react_integration.md     # Frontend integration examples
+├── main.py                      # CLI entry point
+├── web_main.py                  # Web server entry point
 ├── requirements.txt             # Dependencies
 ├── .env.example                # Environment template
 └── README.md                   # This file
@@ -162,7 +191,8 @@ sippy-chat/
 1. **SippyAgent**: Core LangChain Re-Act agent with custom prompt for CI analysis
 2. **Tools**: Extensible tool system with base classes for Sippy API integration
 3. **CLI**: Rich interactive command-line interface with chat functionality
-4. **Config**: Environment-based configuration with validation
+4. **Web Server**: FastAPI-based REST and WebSocket API for web frontend integration
+5. **Config**: Environment-based configuration with validation
 
 ## Development
 
