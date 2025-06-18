@@ -30,6 +30,11 @@ class Config(BaseModel):
         description="Google API key for Gemini models (required when using Gemini)"
     )
 
+    google_credentials_file: Optional[str] = Field(
+        default_factory=lambda: os.getenv("GOOGLE_APPLICATION_CREDENTIALS"),
+        description="Path to Google service account credentials JSON file (alternative to API key)"
+    )
+
     model_name: str = Field(
         default_factory=lambda: os.getenv("MODEL_NAME", "llama3.1:8b"),
         description="Model name to use (e.g., llama3.1:8b for Ollama, gpt-4 for OpenAI)"
@@ -104,11 +109,11 @@ class Config(BaseModel):
                 "Set OPENAI_API_KEY environment variable or use a local endpoint."
             )
 
-        # Require Google API key if using Gemini models
-        if self.is_gemini_model() and not self.google_api_key:
+        # Require Google API key or credentials file if using Gemini models
+        if self.is_gemini_model() and not self.google_api_key and not self.google_credentials_file:
             raise ValueError(
-                "Google API key is required when using Gemini models. "
-                "Set GOOGLE_API_KEY environment variable."
+                "Google API key or service account credentials file is required when using Gemini models. "
+                "Set GOOGLE_API_KEY environment variable or GOOGLE_APPLICATION_CREDENTIALS file path."
             )
     
     @classmethod

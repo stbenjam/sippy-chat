@@ -47,10 +47,16 @@ MODEL_NAME=gpt-3.5-turbo
 OPENAI_API_KEY=your_openai_api_key_here
 ```
 
-**For Google Gemini:**
+**For Google Gemini (API Key):**
 ```env
 MODEL_NAME=gemini-1.5-pro
 GOOGLE_API_KEY=your_google_api_key_here
+```
+
+**For Google Gemini (Service Account):**
+```env
+MODEL_NAME=gemini-1.5-pro
+GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account-key.json
 ```
 
 ### 3. Run the Agent
@@ -68,8 +74,11 @@ python main.py --verbose --thinking --model llama3.1:70b --temperature 0.2
 # Using OpenAI with thinking process visible
 python main.py --thinking --model gpt-4 --endpoint https://api.openai.com/v1
 
-# Using Google Gemini
+# Using Google Gemini with API key
 python main.py --model gemini-1.5-pro
+
+# Using Google Gemini with service account
+python main.py --model gemini-1.5-pro --google-credentials /path/to/credentials.json
 ```
 
 ## Thinking Display
@@ -190,4 +199,8 @@ The agent supports various configuration options through environment variables:
 - `LLM_ENDPOINT`: LLM API endpoint (default: http://localhost:11434/v1 for Ollama)
 - `MODEL_NAME`: Model name to use (default: llama3.1:8b)
 - `OPENAI_API_KEY`: OpenAI API key (only required when using OpenAI endpoint)
+- `GOOGLE_API_KEY`: Google API key (required when using Gemini models)
+- `GOOGLE_APPLICATION_CREDENTIALS`: Path to Google service account JSON file (alternative to API key)
 - `SIPPY_API_URL`: Sippy API base URL (for future use)
+
+For detailed Gemini setup instructions, see [GEMINI_SETUP.md](GEMINI_SETUP.md).

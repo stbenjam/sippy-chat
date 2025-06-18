@@ -334,7 +334,8 @@ class SippyCLI:
 @click.option('--temperature', default=None, type=float, help='Temperature for the model')
 @click.option('--max-iterations', default=None, type=int, help='Maximum number of agent iterations (default: 25)')
 @click.option('--timeout', default=None, type=int, help='Maximum execution time in seconds (default: 1800 = 30 minutes)')
-def main(verbose: bool, thinking: bool, model: str, endpoint: str, temperature: float, max_iterations: int, timeout: int) -> None:
+@click.option('--google-credentials', default=None, help='Path to Google service account credentials JSON file')
+def main(verbose: bool, thinking: bool, model: str, endpoint: str, temperature: float, max_iterations: int, timeout: int, google_credentials: str) -> None:
     """Sippy AI Agent - Your CI/CD Analysis Assistant."""
     setup_logging(verbose)
     
@@ -355,7 +356,9 @@ def main(verbose: bool, thinking: bool, model: str, endpoint: str, temperature: 
             config.max_iterations = max_iterations
         if timeout is not None:
             config.max_execution_time = timeout
-        
+        if google_credentials is not None:
+            config.google_credentials_file = google_credentials
+
         # Create and run CLI
         cli = SippyCLI(config)
         cli.run()

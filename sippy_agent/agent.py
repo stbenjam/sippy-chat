@@ -107,17 +107,25 @@ class SippyAgent:
 
         # Use ChatGoogleGenerativeAI for Gemini models
         if self.config.is_gemini_model():
-            if not self.config.google_api_key:
-                raise ValueError("Google API key is required for Gemini models")
+            if not self.config.google_api_key and not self.config.google_credentials_file:
+                raise ValueError("Google API key or service account credentials file is required for Gemini models")
 
             llm_kwargs = {
                 "model": self.config.model_name,
                 "temperature": self.config.temperature,
-                "google_api_key": self.config.google_api_key,
             }
 
-            if self.config.verbose:
-                logger.info(f"Using ChatGoogleGenerativeAI for Gemini model")
+            # Use API key if provided, otherwise use service account credentials
+            if self.config.google_api_key:
+                llm_kwargs["google_api_key"] = self.config.google_api_key
+                if self.config.verbose:
+                    logger.info(f"Using ChatGoogleGenerativeAI for Gemini model with API key")
+            elif self.config.google_credentials_file:
+                # Set the environment variable for Google credentials
+                import os
+                os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = self.config.google_credentials_file
+                if self.config.verbose:
+                    logger.info(f"Using ChatGoogleGenerativeAI for Gemini model with service account: {self.config.google_credentials_file}")
 
             return ChatGoogleGenerativeAI(**llm_kwargs)
 
