@@ -14,6 +14,7 @@ tools/
 ├── jira_incidents.py          # Jira incident tracking tool
 ├── release_payloads.py        # OpenShift release payload tool
 ├── payload_details.py         # Detailed payload analysis tool
+├── sippy_releases.py          # OpenShift release information tool
 ├── placeholder_tools.py       # Placeholder tools for future features
 ├── test_analysis_helpers.py   # Helper functions for test failure analysis
 └── log_analysis_helpers.py    # Helper functions for log pattern analysis

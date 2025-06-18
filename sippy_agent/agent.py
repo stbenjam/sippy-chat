@@ -22,7 +22,8 @@ from .tools import (
     SippyLogAnalyzerTool,
     SippyJiraIncidentTool,
     SippyReleasePayloadTool,
-    SippyPayloadDetailsTool
+    SippyPayloadDetailsTool,
+    SippyReleasesTool
 )
 
 logger = logging.getLogger(__name__)
@@ -164,6 +165,7 @@ class SippyAgent:
             ),
             SippyReleasePayloadTool(),
             SippyPayloadDetailsTool(),
+            SippyReleasesTool(sippy_api_url=self.config.sippy_api_url),
         ]
         
         if self.config.verbose:
@@ -180,12 +182,11 @@ class SippyAgent:
 ==========================================
 1. If user asks for information available in the job summary, DO NOT search logs! However, if you need additional information consider searching the build logs for errors.
 2. READ tool responses carefully - extract information directly before calling more tools
-3. Call check_known_incidents only ONCE per analysis, not per job
-4. Use information you already have instead of making redundant tool calls
-5. 🚨 NEVER call the same tool with the same parameters twice! If you already called analyze_job_logs with job ID X and pathGlob Y, use those results!
-6. If a tool call didn't give you what you need, try DIFFERENT parameters, don't repeat the same call
-7. 🚨 If a tool fails or gives an error, DO NOT retry it immediately - either try a different tool or provide an answer based on what you know
-8. 🚨 For simple questions that don't require tools (like "hello", "hi", "what tools do you have", greetings), answer directly with "Final Answer:" - DO NOT use any actions or tools
+3. Use information you already have instead of making redundant tool calls
+4. 🚨 NEVER call the same tool with the same parameters twice! If you already called analyze_job_logs with job ID X and pathGlob Y, use those results!  Same thing for incidents, etc.
+5. If a tool call didn't give you what you need, try DIFFERENT parameters, don't repeat the same call, but don't excessively use the tools. Tell the user you don't know if you don't know.
+6. 🚨 If a tool fails or gives an error, DO NOT retry it immediately - either try a different tool or provide an answer based on what you know
+7. 🚨 For simple questions that don't require tools (like "hello", "hi", "what tools do you have", greetings), answer directly with "Final Answer:" - DO NOT use any actions or tools
 
 You have access to tools that can help you analyze CI jobs, and test failures.
 
@@ -210,7 +211,8 @@ When analyzing a job failure, follow this conservative workflow:
 3. If the job summary provides sufficient information to answer the user's question, STOP HERE
 4. Only proceed to log analysis if:
    - The user explicitly asks for log analysis, OR
-   - The job summary doesn't contain enough detail to answer the user's specific question
+   - The job summary doesn't contain enough detail to answer the user's specific question, for example
+     test failures are too generic.
 5. When analyzing logs: use analyze_job_logs with the numeric job ID
 6. Only use check_known_incidents if specific error patterns are found that warrant correlation
 
@@ -220,9 +222,10 @@ When users ask about release payloads, follow this conservative approach:
 
 STAGE 1 - Basic Status (for questions like "tell me about payload X"):
 1. Use get_release_payloads with the payload_name parameter to get basic status
-2. Report whether the payload was accepted/rejected/ready
-3. If rejected, offer to investigate WHY: "This payload was rejected! Would you like details about why?"
-4. STOP HERE unless user asks for details
+2. If the user doesn't provide a payload_name, use the release tool to find the most recent release
+3. Report whether the payload was accepted/rejected/ready
+4. If rejected, offer to investigate WHY: "This payload was rejected! Would you like details about why?"
+5. STOP HERE unless user asks for details
 
 STAGE 2 - Failed Jobs Overview (only when user asks for details about WHY a payload failed):
 1. Use get_payload_details to get failed job IDs and basic failure reasons
