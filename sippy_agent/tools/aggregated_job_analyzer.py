@@ -17,7 +17,7 @@ class AggregatedJobAnalyzerTool(SippyBaseTool):
     """Tool for getting aggregated test results URLs (YAML format) from aggregated prow jobs."""
     
     name: str = "get_aggregated_results_url"
-    description: str = "Get the direct URL to aggregated test results (YAML format) for an aggregated prow job. Use this for jobs that start with 'aggregated-'. Input: numeric job ID only."
+    description: str = "Get the direct URL to aggregated test results (YAML format) for detailed analysis of aggregated prow jobs. Only use this when specifically asked for detailed aggregated job analysis or underlying job investigation. For basic aggregated job information, use get_prow_job_summary first. Input: numeric job ID only."
     
     # Add sippy_api_url as a proper field
     sippy_api_url: Optional[str] = Field(default=None, description="Sippy API base URL")
@@ -73,10 +73,10 @@ class AggregatedJobAnalyzerTool(SippyBaseTool):
                             if artifact_url:
                                 result = f"**Aggregated JUnit XML URL Found:**\n"
                                 result += f"🔗 **URL:** {artifact_url}\n\n"
-                                result += f"**Next Steps:**\n"
-                                result += f"1. Use the JUnit parser tool with this URL to analyze the aggregated test results\n"
-                                result += f"2. The JUnit parser will show you which tests failed and provide links to underlying job runs\n"
-                                result += f"3. Only analyze individual underlying jobs if specifically requested for deep analysis\n\n"
+                                result += f"**For detailed analysis:**\n"
+                                result += f"Use the JUnit parser tool with this URL to analyze the aggregated test results.\n"
+                                result += f"The JUnit parser will show which tests failed and provide links to underlying job runs.\n\n"
+                                result += f"**Note:** Aggregated jobs contain both successful and failing underlying jobs - focus on the failed ones.\n\n"
                                 result += f"**Example command:** `parse_junit_xml` with junit_xml_url: {artifact_url}"
                                 return result
                             else:

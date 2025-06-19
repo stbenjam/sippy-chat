@@ -28,7 +28,7 @@ class SippyReleasesTool(SippyBaseTool):
 
     args_schema: Type[SippyToolInput] = ReleasesInput
 
-    def _run(self) -> str:
+    def _run(self, *args, **kwargs: Any) -> str:
         """Get release information from Sippy API."""
         if not self.sippy_api_url:
             return "Error: No Sippy API URL configured. Please set SIPPY_API_URL environment variable."
@@ -71,11 +71,14 @@ class SippyReleasesTool(SippyBaseTool):
         dates = data.get("dates", {})
         last_updated = data.get("last_updated", "")
 
-        if not releases:
-            return "No releases found in Sippy API response"
+        # Filter out non-release entries like "Presubmits"
+        filtered_releases = [r for r in releases if r != "Presubmits"]
+
+        if not filtered_releases:
+            return "No valid releases found in Sippy API response"
 
         # Always return comprehensive release information
-        return self._format_all_releases(releases, ga_dates, dates, last_updated)
+        return self._format_all_releases(filtered_releases, ga_dates, dates, last_updated)
 
     def _format_all_releases(
         self,
