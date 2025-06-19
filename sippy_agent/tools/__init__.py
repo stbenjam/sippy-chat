@@ -10,6 +10,8 @@ from .release_payloads import SippyReleasePayloadTool
 from .payload_details import SippyPayloadDetailsTool
 from .sippy_releases import SippyReleasesTool
 from .junit_parser import JUnitParserTool
+from .aggregated_job_analyzer import AggregatedJobAnalyzerTool
+from .aggregated_yaml_parser import AggregatedYAMLParserTool
 from .placeholder_tools import SippyJobAnalysisTool, SippyTestFailureTool
 
 __all__ = [
@@ -22,6 +24,8 @@ __all__ = [
     "SippyPayloadDetailsTool",
     "SippyReleasesTool",
     "JUnitParserTool",
+    "AggregatedJobAnalyzerTool",
+    "AggregatedYAMLParserTool",
     "SippyJobAnalysisTool",
     "SippyTestFailureTool"
 ]

@@ -35,7 +35,9 @@ tools/
 - **SippyJiraIncidentTool** (`jira_incidents.py`): Queries Jira for known open incidents in the TRT project to correlate with job failures
 
 ### Test Analysis Tools
-- **JUnitParserTool** (`junit_parser.py`): Parses JUnit XML files from URLs to extract test failures and flakes with intelligent flake detection
+- **JUnitParserTool** (`junit_parser.py`): Parses JUnit XML files from URLs to extract test failures and flakes with intelligent flake detection. Also handles aggregated job results embedded as YAML in JUnit XML system-out sections.
+- **AggregatedJobAnalyzerTool** (`aggregated_job_analyzer.py`): Gets direct URLs to aggregated test results for jobs that start with 'aggregated-'
+- **AggregatedYAMLParserTool** (`aggregated_yaml_parser.py`): Parses aggregated test results in pure YAML format with underlying job links
 
 ### Utility Tools
 - **ExampleTool** (`base_tool.py`): Simple example tool for testing and demonstration
@@ -43,6 +45,23 @@ tools/
 ### Placeholder Tools
 - **SippyJobAnalysisTool** (`placeholder_tools.py`): Placeholder for future job analysis features
 - **SippyTestFailureTool** (`placeholder_tools.py`): Placeholder for future test failure analysis features
+
+## Special Job Types
+
+### Aggregated Jobs
+Jobs that start with "aggregated-" are statistical aggregations that run multiple instances (typically 10) of the same test. These jobs have special handling:
+
+1. **Detection**: The job summary tool automatically detects aggregated jobs by name prefix
+2. **Analysis Workflow**:
+   - Use `get_aggregated_results_url` to get the junit-aggregated.xml URL
+   - Use `parse_junit_xml` with that URL to extract YAML data embedded in `<system-out>` sections
+   - The parser shows passing/failing underlying jobs with direct links
+   - Only analyze individual underlying jobs if specifically requested for deep analysis
+
+3. **Data Format**: Aggregated results are stored as YAML within JUnit XML `<system-out>` sections, containing:
+   - Test suite name and summary with historical pass rates
+   - Arrays of passing, failing, and skipped job runs
+   - Each job entry includes `jobrunid`, `humanurl`, and `gcsartifacturl`
 
 ## Helper Modules
 

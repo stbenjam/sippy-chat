@@ -112,6 +112,16 @@ class SippyProwJobSummaryTool(SippyBaseTool):
         result += f"**Release:** {release}\n"
         result += f"**Cluster:** {cluster}\n\n"
 
+        # Check if this is an aggregated job and provide special handling guidance
+        if job_name and job_name.startswith("aggregated-"):
+            result += f"🔄 **AGGREGATED JOB DETECTED**\n"
+            result += f"This is a statistical aggregation job that runs multiple instances (typically 10) of the same test.\n"
+            result += f"The JUnit XML contains YAML data in <system-out> sections with links to underlying jobs.\n\n"
+            result += f"**To analyze this aggregated job:**\n"
+            result += f"1. Use `get_aggregated_results_url` tool to get the junit-aggregated.xml URL\n"
+            result += f"2. Use `parse_junit_xml` tool with that URL to see aggregated results and underlying job links\n"
+            result += f"3. Only analyze individual underlying jobs if specifically requested for deep analysis\n\n"
+
         # Format timing information
         result += f"**⏱️ Timing & Duration:**\n"
         if start_time:

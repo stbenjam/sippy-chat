@@ -24,7 +24,9 @@ from .tools import (
     SippyReleasePayloadTool,
     SippyPayloadDetailsTool,
     SippyReleasesTool,
-    JUnitParserTool
+    JUnitParserTool,
+    AggregatedJobAnalyzerTool,
+    AggregatedYAMLParserTool
 )
 
 logger = logging.getLogger(__name__)
@@ -168,6 +170,8 @@ class SippyAgent:
             SippyPayloadDetailsTool(),
             SippyReleasesTool(sippy_api_url=self.config.sippy_api_url),
             JUnitParserTool(),
+            AggregatedJobAnalyzerTool(sippy_api_url=self.config.sippy_api_url),
+            AggregatedYAMLParserTool(),
         ]
         
         if self.config.verbose:

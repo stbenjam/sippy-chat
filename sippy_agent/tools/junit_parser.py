@@ -7,6 +7,7 @@ import xml.etree.ElementTree as ET
 from typing import Any, Dict, List, Optional, Type
 from pydantic import Field
 import httpx
+import yaml
 
 from .base_tool import SippyBaseTool, SippyToolInput
 
@@ -56,8 +57,16 @@ class JUnitParserTool(SippyBaseTool):
                 logger.error(f"XML parse error: {e}")
                 return f"Error: Invalid XML format - {str(e)}"
             
-            # Extract test results
+            # Check if this is an aggregated JUnit file first
+            aggregated_results = self._extract_aggregated_yaml_from_xml(root)
+            if aggregated_results:
+                return self._format_aggregated_results(aggregated_results)
+
+            # Extract regular test results
             test_results = self._extract_test_results(root)
+
+            # Check for underlying job links in regular JUnit
+            underlying_jobs = self._extract_underlying_job_links(xml_content)
             
             # Process results based on requirements
             if test_name:
@@ -65,13 +74,13 @@ class JUnitParserTool(SippyBaseTool):
                 filtered_results = [result for result in test_results if result['name'] == test_name]
                 if not filtered_results:
                     return f"No test results found for test name: {test_name}"
-                return self._format_test_results(filtered_results, test_name)
+                return self._format_test_results(filtered_results, test_name, underlying_jobs)
             else:
                 # Return only failures and flakes, limit to 25 but respect 150KB overall limit
                 failures_and_flakes = self._identify_failures_and_flakes(test_results)
 
                 # Format results while respecting the 150KB overall limit
-                result_text, actual_count, total_count = self._format_test_results_with_limit(failures_and_flakes, max_size_kb=150)
+                result_text, actual_count, total_count = self._format_test_results_with_limit(failures_and_flakes, underlying_jobs, max_size_kb=150)
 
                 if actual_count < total_count:
                     result_text += f"\n\n**Note:** Results truncated to {actual_count} entries due to size limit. Total failures/flakes found: {total_count}"
@@ -160,7 +169,188 @@ class JUnitParserTool(SippyBaseTool):
             })
         
         return test_results
-    
+
+    def _extract_aggregated_yaml_from_xml(self, root: ET.Element) -> Optional[List[Dict[str, Any]]]:
+        """Extract aggregated YAML data from JUnit XML system-out sections, but only for failed tests."""
+        import yaml
+
+        aggregated_tests = []
+
+        # Look for testcase elements with system-out containing YAML
+        testcases = root.findall('.//testcase')
+
+        for testcase in testcases:
+            # Only process testcases that have actual JUnit failures (indicated by <failure> element)
+            failure_element = testcase.find('failure')
+            if failure_element is None:
+                # This test passed according to JUnit, skip it
+                continue
+
+            system_out = testcase.find('system-out')
+            if system_out is not None and system_out.text:
+                try:
+                    # Try to parse the system-out content as YAML
+                    yaml_content = system_out.text.strip()
+                    if yaml_content and ('passes:' in yaml_content or 'failures:' in yaml_content):
+                        yaml_data = yaml.safe_load(yaml_content)
+                        if isinstance(yaml_data, dict):
+                            # Add test case name and failure info to the YAML data
+                            yaml_data['testcase_name'] = testcase.get('name', 'Unknown')
+                            yaml_data['junit_failure_message'] = failure_element.get('message', 'No failure message')
+                            aggregated_tests.append(yaml_data)
+                except yaml.YAMLError:
+                    # Not valid YAML, continue
+                    continue
+
+        return aggregated_tests if aggregated_tests else None
+
+    def _format_aggregated_results(self, aggregated_tests: List[Dict[str, Any]]) -> str:
+        """Format aggregated test results for display - only show tests that actually failed according to JUnit."""
+        result = "**🔄 Aggregated Test Results - Failed Tests Only**\n\n"
+
+        if not aggregated_tests:
+            result += "**✅ All aggregated tests passed!** No JUnit failures detected.\n"
+            result += "This means all statistical aggregations met their required pass thresholds.\n"
+            return result
+
+        result += f"**❌ Failed Aggregated Tests ({len(aggregated_tests)} total):**\n"
+        result += "These tests failed their statistical aggregation requirements.\n\n"
+
+        for i, test_data in enumerate(aggregated_tests, 1):
+            testcase_name = test_data.get('testcase_name', f'Test {i}')
+            testsuitename = test_data.get('testsuitename', 'Unknown')
+            summary = test_data.get('summary', 'No summary available')
+            junit_failure = test_data.get('junit_failure_message', 'No failure message')
+
+            result += f"**{i}. {testcase_name}**\n"
+            result += f"**Suite:** {testsuitename}\n"
+            result += f"**Summary:** {summary}\n"
+            result += f"**JUnit Failure:** {junit_failure}\n\n"
+
+            # Process passes, failures, and skips from the underlying jobs
+            passes = test_data.get('passes', [])
+            failures = test_data.get('failures', [])
+            skips = test_data.get('skips', [])
+
+            # Deduplicate all job lists for accurate counts
+            unique_passes = []
+            seen_pass_ids = set()
+            for job in passes:
+                job_id = job.get('jobrunid', 'Unknown')
+                if job_id not in seen_pass_ids:
+                    unique_passes.append(job)
+                    seen_pass_ids.add(job_id)
+
+            unique_failures = []
+            seen_fail_ids = set()
+            for job in failures:
+                job_id = job.get('jobrunid', 'Unknown')
+                if job_id not in seen_fail_ids:
+                    unique_failures.append(job)
+                    seen_fail_ids.add(job_id)
+
+            unique_skips = []
+            seen_skip_ids = set()
+            for job in skips:
+                job_id = job.get('jobrunid', 'Unknown')
+                if job_id not in seen_skip_ids:
+                    unique_skips.append(job)
+                    seen_skip_ids.add(job_id)
+
+            # Show underlying job breakdown with unique counts
+            total_unique_jobs = len(unique_passes) + len(unique_failures) + len(unique_skips)
+            if total_unique_jobs > 0:
+                pass_rate = (len(unique_passes) / total_unique_jobs) * 100
+                result += f"**📊 Underlying Job Breakdown:**\n"
+                result += f"- Total unique underlying jobs: {total_unique_jobs}\n"
+                result += f"- Unique passing jobs: {len(unique_passes)}\n"
+                result += f"- Unique failing jobs: {len(unique_failures)}\n"
+                result += f"- Unique skipped jobs: {len(unique_skips)}\n"
+                result += f"- Actual pass rate: {pass_rate:.1f}%\n\n"
+
+            # Show some example failing jobs if they exist (using already deduplicated list)
+            if unique_failures:
+                result += f"**❌ Example Failing Jobs (showing up to 3 unique):**\n"
+                for j, job in enumerate(unique_failures[:3], 1):
+                    job_id = job.get('jobrunid', 'Unknown')
+                    human_url = job.get('humanurl', 'No URL')
+                    result += f"  {j}. Job ID {job_id}: {human_url}\n"
+
+                if len(unique_failures) > 3:
+                    result += f"  ... and {len(unique_failures) - 3} more unique failing jobs\n"
+                result += "\n"
+
+            # Show some example passing jobs for context (using already deduplicated list)
+            if unique_passes:
+                result += f"**✅ Example Passing Jobs (showing up to 2 unique):**\n"
+                for j, job in enumerate(unique_passes[:2], 1):
+                    job_id = job.get('jobrunid', 'Unknown')
+                    human_url = job.get('humanurl', 'No URL')
+                    result += f"  {j}. Job ID {job_id}: {human_url}\n"
+
+                if len(unique_passes) > 2:
+                    result += f"  ... and {len(unique_passes) - 2} more unique passing jobs\n"
+                result += "\n"
+
+            result += "---\n\n"
+
+        # Add guidance for next steps
+        if aggregated_tests:
+            result += "**🔍 Recommended Next Steps:**\n"
+            result += "1. Focus on the JUnit failure messages above - these explain why the aggregation failed\n"
+            result += "2. Use the job summary tool on example failing job IDs to understand specific failure modes\n"
+            result += "3. Look for patterns: are failures consistent across jobs or sporadic?\n"
+            result += "4. Check if the failure rate exceeds historical thresholds mentioned in summaries\n"
+            result += "5. Only analyze individual underlying jobs if specifically requested for deep analysis\n"
+
+        return result
+
+    def _extract_underlying_job_links(self, xml_content: str) -> List[Dict[str, str]]:
+        """Extract underlying job links from aggregated JUnit XML content."""
+        underlying_jobs = []
+
+        # Look for URLs in the XML content that point to underlying jobs
+        import re
+
+        # Pattern to match prow job URLs in the XML content
+        url_pattern = r'https://prow\.ci\.openshift\.org/view/gs/[^\s<>"\']+/(\d+)'
+
+        # Find all URLs and extract job IDs
+        urls = re.findall(url_pattern, xml_content)
+
+        # Also look for job IDs in failure messages or test output
+        # Pattern for job IDs that might be mentioned in test failures
+        job_id_pattern = r'job[_\s]*(?:id|run)[_\s]*:?\s*(\d{10,})'
+        job_ids_from_text = re.findall(job_id_pattern, xml_content, re.IGNORECASE)
+
+        # Combine and deduplicate job IDs
+        all_job_ids = set(urls + job_ids_from_text)
+
+        for job_id in all_job_ids:
+            underlying_jobs.append({
+                'job_id': job_id,
+                'url': f"https://prow.ci.openshift.org/view/gs/test-platform-results/logs/{job_id}"
+            })
+
+        # Also look for specific patterns in aggregated test output that might contain links
+        # Pattern to find "PASSING" and "FAILING" job links in test output
+        link_pattern = r'(PASSING|FAILING)\s+jobs?[:\s]*([^\s<>"\']+)'
+        links = re.findall(link_pattern, xml_content, re.IGNORECASE)
+
+        for status, url in links:
+            if 'prow.ci.openshift.org' in url or url.startswith('http'):
+                # Extract job ID from URL if possible
+                job_id_match = re.search(r'/(\d{10,})/?$', url)
+                if job_id_match:
+                    job_id = job_id_match.group(1)
+                    underlying_jobs.append({
+                        'job_id': job_id,
+                        'url': url,
+                        'status': status.upper()
+                    })
+
+        return underlying_jobs
+
     def _identify_failures_and_flakes(self, test_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Identify failures and flakes from test results."""
         # Group tests by full name to identify flakes
@@ -219,7 +409,7 @@ class JUnitParserTool(SippyBaseTool):
         
         return failures_and_flakes
     
-    def _format_test_results(self, results: List[Dict[str, Any]], specific_test: Optional[str] = None) -> str:
+    def _format_test_results(self, results: List[Dict[str, Any]], specific_test: Optional[str] = None, underlying_jobs: Optional[List[Dict[str, str]]] = None) -> str:
         """Format test results for display."""
         if not results:
             if specific_test:
@@ -253,9 +443,27 @@ class JUnitParserTool(SippyBaseTool):
             
             formatted_results.append(test_info)
         
-        return header + "\n".join(formatted_results)
+        result = header + "\n".join(formatted_results)
 
-    def _format_test_results_with_limit(self, results: List[Dict[str, Any]], max_size_kb: int = 150) -> tuple[str, int, int]:
+        # Add underlying jobs information if this is an aggregated job
+        if underlying_jobs:
+            result += "\n\n🔄 **AGGREGATED JOB - UNDERLYING JOBS DETECTED:**\n"
+            result += "This JUnit XML contains results from multiple underlying job runs.\n\n"
+
+            if len(underlying_jobs) > 0:
+                result += "**Underlying Job Links:**\n"
+                for i, job in enumerate(underlying_jobs[:10], 1):  # Limit to first 10
+                    status_info = f" ({job['status']})" if 'status' in job else ""
+                    result += f"{i}. Job ID {job['job_id']}{status_info}: {job['url']}\n"
+
+                if len(underlying_jobs) > 10:
+                    result += f"... and {len(underlying_jobs) - 10} more underlying jobs\n"
+
+                result += "\n💡 **For deep analysis:** Use the job summary tool on individual job IDs above to analyze specific failures.\n"
+
+        return result
+
+    def _format_test_results_with_limit(self, results: List[Dict[str, Any]], underlying_jobs: Optional[List[Dict[str, str]]] = None, max_size_kb: int = 150) -> tuple[str, int, int]:
         """Format test results while respecting overall size limit.
 
         Returns:
@@ -305,4 +513,22 @@ class JUnitParserTool(SippyBaseTool):
             current_size += test_size
             actual_count += 1
 
-        return header + "\n".join(formatted_results), actual_count, total_count
+        result = header + "\n".join(formatted_results)
+
+        # Add underlying jobs information if this is an aggregated job
+        if underlying_jobs:
+            result += "\n\n🔄 **AGGREGATED JOB - UNDERLYING JOBS DETECTED:**\n"
+            result += "This JUnit XML contains results from multiple underlying job runs.\n\n"
+
+            if len(underlying_jobs) > 0:
+                result += "**Underlying Job Links:**\n"
+                for i, job in enumerate(underlying_jobs[:10], 1):  # Limit to first 10
+                    status_info = f" ({job['status']})" if 'status' in job else ""
+                    result += f"{i}. Job ID {job['job_id']}{status_info}: {job['url']}\n"
+
+                if len(underlying_jobs) > 10:
+                    result += f"... and {len(underlying_jobs) - 10} more underlying jobs\n"
+
+                result += "\n💡 **For deep analysis:** Use the job summary tool on individual job IDs above to analyze specific failures.\n"
+
+        return result, actual_count, total_count
