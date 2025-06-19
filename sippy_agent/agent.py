@@ -23,7 +23,8 @@ from .tools import (
     SippyJiraIncidentTool,
     SippyReleasePayloadTool,
     SippyPayloadDetailsTool,
-    SippyReleasesTool
+    SippyReleasesTool,
+    JUnitParserTool
 )
 
 logger = logging.getLogger(__name__)
@@ -166,6 +167,7 @@ class SippyAgent:
             SippyReleasePayloadTool(),
             SippyPayloadDetailsTool(),
             SippyReleasesTool(sippy_api_url=self.config.sippy_api_url),
+            JUnitParserTool(),
         ]
         
         if self.config.verbose:

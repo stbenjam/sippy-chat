@@ -9,6 +9,7 @@ from .jira_incidents import SippyJiraIncidentTool
 from .release_payloads import SippyReleasePayloadTool
 from .payload_details import SippyPayloadDetailsTool
 from .sippy_releases import SippyReleasesTool
+from .junit_parser import JUnitParserTool
 from .placeholder_tools import SippyJobAnalysisTool, SippyTestFailureTool
 
 __all__ = [
@@ -20,6 +21,7 @@ __all__ = [
     "SippyReleasePayloadTool",
     "SippyPayloadDetailsTool",
     "SippyReleasesTool",
+    "JUnitParserTool",
     "SippyJobAnalysisTool",
     "SippyTestFailureTool"
 ]

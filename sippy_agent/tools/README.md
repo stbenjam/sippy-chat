@@ -15,6 +15,7 @@ tools/
 ├── release_payloads.py        # OpenShift release payload tool
 ├── payload_details.py         # Detailed payload analysis tool
 ├── sippy_releases.py          # OpenShift release information tool
+├── junit_parser.py            # JUnit XML parser for test failures and flakes
 ├── placeholder_tools.py       # Placeholder tools for future features
 ├── test_analysis_helpers.py   # Helper functions for test failure analysis
 └── log_analysis_helpers.py    # Helper functions for log pattern analysis
@@ -32,6 +33,9 @@ tools/
 
 ### External Integration Tools
 - **SippyJiraIncidentTool** (`jira_incidents.py`): Queries Jira for known open incidents in the TRT project to correlate with job failures
+
+### Test Analysis Tools
+- **JUnitParserTool** (`junit_parser.py`): Parses JUnit XML files from URLs to extract test failures and flakes with intelligent flake detection
 
 ### Utility Tools
 - **ExampleTool** (`base_tool.py`): Simple example tool for testing and demonstration
