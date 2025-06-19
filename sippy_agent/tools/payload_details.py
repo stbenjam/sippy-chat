@@ -191,6 +191,10 @@ class SippyPayloadDetailsTool(SippyBaseTool):
                         result += f"• **{job_name}**"
                         if url:
                             result += f" ([View Job]({url}))"
+                        elif prow_job_id:
+                            # Construct prow URL if not provided by API
+                            constructed_url = f"https://prow.ci.openshift.org/view/gs/test-platform-results/logs/{prow_job_id}"
+                            result += f" ([View Job]({constructed_url}))"
                         result += "\n"
                         if prow_job_id:
                             result += f"  Job ID: `{prow_job_id}`\n"
@@ -278,38 +282,14 @@ class SippyPayloadDetailsTool(SippyBaseTool):
                 result += "\n"
             result += "\n"
 
-        # Rebuilt images
-        rebuilt_images = change_log_json.get("rebuiltImages", [])
-        if rebuilt_images:
-            result += f"**🔨 Rebuilt Images ({len(rebuilt_images)}):**\n"
-            for image in rebuilt_images[:5]:  # Limit to first 5 to avoid overwhelming output
-                name = image.get("name", "Unknown")
-                short_commit = image.get("shortCommit", "")
-                commit = image.get("commit", "")
-                path = image.get("path", "")
 
-                result += f"• **{name}**"
-                if short_commit and path:
-                    # Create link to specific commit
-                    commit_url = f"{path}/commit/{commit}" if commit else f"{path}/commit/{short_commit}"
-                    result += f" ([commit: {short_commit}]({commit_url}))"
-                elif short_commit:
-                    result += f" (commit: {short_commit})"
-
-                if path:
-                    repo_name = path.split("/")[-1] if "/" in path else path
-                    result += f" - [{repo_name}]({path})"
-                result += "\n"
-
-            if len(rebuilt_images) > 5:
-                result += f"• ... and {len(rebuilt_images) - 5} more rebuilt images\n"
-            result += "\n"
 
         # Pull Requests from updated images
         updated_images = change_log_json.get("updatedImages", [])
         if updated_images:
             result += f"**📦 Pull Requests ({len(updated_images)} repositories):**\n"
-            for image in updated_images[:10]:  # Limit to first 10 to avoid overwhelming output
+            # Show all repositories - let the global 150kB guard handle truncation
+            for image in updated_images:
                 name = image.get("name", "Unknown")
                 commits = image.get("commits", [])
                 path = image.get("path", "")
@@ -356,8 +336,6 @@ class SippyPayloadDetailsTool(SippyBaseTool):
                     result += f"  - ... and {len(commits) - 3} more commits\n"
                 result += "\n"
 
-            if len(updated_images) > 10:
-                result += f"• ... and {len(updated_images) - 10} more repositories\n"
             result += "\n"
 
         return result
