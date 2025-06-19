@@ -173,17 +173,27 @@ class SippyProwJobSummaryTool(SippyBaseTool):
                     result += f"{key}: {value}\n"
             result += "\n"
 
-        # Format legacy test failures if present
+        # Format legacy test failures if present (limit to 25 to control token usage)
         if test_failures:
-            result += f"**❌ Failed Tests Details ({len(test_failures)} total):**\n"
+            total_failures = len(test_failures)
+            max_failures_to_show = 25
 
-            # Analyze test failure patterns
+            result += f"**❌ Failed Tests Details ({total_failures} total"
+            if total_failures > max_failures_to_show:
+                result += f", showing first {max_failures_to_show}"
+            result += "):**\n"
+
+            # Analyze test failure patterns (use all failures for analysis)
             test_analysis = analyze_test_failures(test_failures)
             if test_analysis:
                 result += f"\n**🔍 Test Failure Analysis:**\n{test_analysis}\n"
 
             result += f"\n**📋 Individual Test Failures:**\n"
-            for i, (test_name, failure_msg) in enumerate(test_failures.items(), 1):
+
+            # Limit the number of individual failures displayed
+            failures_to_show = list(test_failures.items())[:max_failures_to_show]
+
+            for i, (test_name, failure_msg) in enumerate(failures_to_show, 1):
                 # Extract test category from test name
                 test_category = extract_test_category(test_name)
 
@@ -195,16 +205,36 @@ class SippyProwJobSummaryTool(SippyBaseTool):
                     result += f"   Category: {test_category}\n"
                 result += f"   Error: {clean_msg}\n\n"
 
-        # Format degraded operators if present
+            # Add note if there are more failures
+            if total_failures > max_failures_to_show:
+                remaining = total_failures - max_failures_to_show
+                result += f"... and {remaining} more failed tests (use log analysis tools for detailed investigation)\n\n"
+
+        # Format degraded operators if present (limit to 10 to control token usage)
         if degraded_operators:
-            result += f"**⚠️ Degraded Operators ({len(degraded_operators)} total):**\n"
-            for i, (operator_name, operator_info) in enumerate(degraded_operators.items(), 1):
+            total_operators = len(degraded_operators)
+            max_operators_to_show = 10
+
+            result += f"**⚠️ Degraded Operators ({total_operators} total"
+            if total_operators > max_operators_to_show:
+                result += f", showing first {max_operators_to_show}"
+            result += "):**\n"
+
+            # Limit the number of operators displayed
+            operators_to_show = list(degraded_operators.items())[:max_operators_to_show]
+
+            for i, (operator_name, operator_info) in enumerate(operators_to_show, 1):
                 result += f"{i}. **{operator_name}**\n"
                 if isinstance(operator_info, str):
                     result += f"   Info: {operator_info}\n"
                 else:
                     result += f"   Info: {str(operator_info)}\n"
                 result += "\n"
+
+            # Add note if there are more operators
+            if total_operators > max_operators_to_show:
+                remaining = total_operators - max_operators_to_show
+                result += f"... and {remaining} more degraded operators\n\n"
 
         # Add useful links
         result += f"**🔗 Links:**\n"

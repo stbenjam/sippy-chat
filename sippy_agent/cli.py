@@ -292,8 +292,23 @@ class SippyCLI:
 
                 # Store only the final output in history
                 final_output = response["output"]
+
+                # Display token usage if available
+                token_usage = response.get("token_usage")
+                if token_usage and token_usage.get('total_tokens', 0) > 0:
+                    self._display_token_usage(token_usage)
+
+            elif isinstance(response, dict) and "token_usage" in response:
+                # Response with token usage but no thinking steps
+                console.print(Panel(response["output"], title="Sippy AI", border_style="green"))
+                final_output = response["output"]
+
+                # Display token usage
+                token_usage = response.get("token_usage")
+                if token_usage and token_usage.get('total_tokens', 0) > 0:
+                    self._display_token_usage(token_usage)
             else:
-                # Regular response without thinking
+                # Regular response without thinking or token usage
                 console.print(Panel(response, title="Sippy AI", border_style="green"))
                 final_output = response
 
@@ -308,7 +323,24 @@ class SippyCLI:
             console.print(f"\n[red]Error: {str(e)}[/red]")
         
         return True
-    
+
+    def _display_token_usage(self, token_usage: Dict[str, int]) -> None:
+        """Display token usage information."""
+        token_info = Text()
+        token_info.append("📊 Token Usage: ", style="bold cyan")
+        token_info.append(f"Total: {token_usage['total_tokens']}, ", style="white")
+        token_info.append(f"Prompt: {token_usage['prompt_tokens']}, ", style="yellow")
+        token_info.append(f"Completion: {token_usage['completion_tokens']}, ", style="green")
+        token_info.append(f"LLM Calls: {token_usage['call_count']}", style="blue")
+
+        # Add warning for high usage
+        if token_usage['total_tokens'] > 100000:
+            token_info.append(" ⚠️ HIGH USAGE", style="bold red")
+        elif token_usage['total_tokens'] > 50000:
+            token_info.append(" ⚠️ MODERATE USAGE", style="bold yellow")
+
+        console.print(Panel(token_info, title="Token Usage", border_style="cyan"))
+
     def run(self) -> None:
         """Run the interactive CLI."""
         self.display_welcome()

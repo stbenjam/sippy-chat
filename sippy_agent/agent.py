@@ -11,7 +11,7 @@ from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.tools import BaseTool
 from langchain.callbacks.base import BaseCallbackHandler
-from langchain.schema import AgentAction, AgentFinish
+from langchain.schema import AgentAction, AgentFinish, LLMResult
 
 from .config import Config
 from .tools import (
@@ -93,6 +93,101 @@ class StreamingThinkingHandler(BaseCallbackHandler):
         return "Analyzing..."
 
 
+class TokenCountingHandler(BaseCallbackHandler):
+    """Callback handler to count tokens used in LLM calls."""
+
+    def __init__(self):
+        """Initialize token counter."""
+        self.total_tokens = 0
+        self.prompt_tokens = 0
+        self.completion_tokens = 0
+        self.call_count = 0
+        self.input_texts = []
+        self.output_texts = []
+
+    def on_llm_start(self, serialized: Dict[str, Any], prompts: List[str], **kwargs) -> None:
+        """Called when LLM starts generating."""
+        # Store input prompts for token estimation
+        self.input_texts.extend(prompts)
+
+    def on_llm_end(self, response: LLMResult, **kwargs) -> None:
+        """Called when LLM finishes generating."""
+        self.call_count += 1
+
+        # Try to extract token usage from response (OpenAI format)
+        if hasattr(response, 'llm_output') and response.llm_output:
+            token_usage = response.llm_output.get('token_usage', {})
+            if token_usage:
+                self.total_tokens += token_usage.get('total_tokens', 0)
+                self.prompt_tokens += token_usage.get('prompt_tokens', 0)
+                self.completion_tokens += token_usage.get('completion_tokens', 0)
+
+                logger.info(f"LLM Call {self.call_count}: "
+                           f"Prompt: {token_usage.get('prompt_tokens', 0)}, "
+                           f"Completion: {token_usage.get('completion_tokens', 0)}, "
+                           f"Total: {token_usage.get('total_tokens', 0)}")
+                return
+
+        # For Gemini models, try alternative token counting
+        if hasattr(response, 'generations') and response.generations:
+            for generation_list in response.generations:
+                for generation in generation_list:
+                    if hasattr(generation, 'generation_info') and generation.generation_info:
+                        usage = generation.generation_info.get('usage_metadata', {})
+                        if usage:
+                            prompt_tokens = usage.get('prompt_token_count', 0)
+                            completion_tokens = usage.get('candidates_token_count', 0)
+                            total_tokens = usage.get('total_token_count', prompt_tokens + completion_tokens)
+
+                            self.total_tokens += total_tokens
+                            self.prompt_tokens += prompt_tokens
+                            self.completion_tokens += completion_tokens
+
+                            logger.info(f"LLM Call {self.call_count} (Gemini): "
+                                       f"Prompt: {prompt_tokens}, "
+                                       f"Completion: {completion_tokens}, "
+                                       f"Total: {total_tokens}")
+                            return
+
+        # Fallback: estimate tokens if no usage data available
+        # Store output texts for estimation
+        for generation_list in response.generations:
+            for generation in generation_list:
+                self.output_texts.append(generation.text)
+
+        # Rough estimation: ~4 characters per token for English text
+        estimated_prompt_tokens = sum(len(text) // 4 for text in self.input_texts[-len(response.generations):])
+        estimated_completion_tokens = sum(len(text) // 4 for text in self.output_texts[-len(response.generations):])
+        estimated_total = estimated_prompt_tokens + estimated_completion_tokens
+
+        self.total_tokens += estimated_total
+        self.prompt_tokens += estimated_prompt_tokens
+        self.completion_tokens += estimated_completion_tokens
+
+        logger.info(f"LLM Call {self.call_count} (Estimated): "
+                   f"Prompt: ~{estimated_prompt_tokens}, "
+                   f"Completion: ~{estimated_completion_tokens}, "
+                   f"Total: ~{estimated_total}")
+
+    def get_summary(self) -> Dict[str, int]:
+        """Get token usage summary."""
+        return {
+            'total_tokens': self.total_tokens,
+            'prompt_tokens': self.prompt_tokens,
+            'completion_tokens': self.completion_tokens,
+            'call_count': self.call_count
+        }
+
+    def reset(self):
+        """Reset token counters."""
+        self.total_tokens = 0
+        self.prompt_tokens = 0
+        self.completion_tokens = 0
+        self.call_count = 0
+        self.input_texts = []
+        self.output_texts = []
+
+
 class SippyAgent:
     """LangChain Re-Act agent for CI analysis with Sippy."""
     
@@ -102,6 +197,7 @@ class SippyAgent:
         self.llm = self._create_llm()
         self.tools = self._create_tools()
         self.agent_executor = self._create_agent_executor()
+        self.token_counter = TokenCountingHandler()
     
     def _create_llm(self) -> Union[ChatOpenAI, ChatGoogleGenerativeAI]:
         """Create the language model instance."""
@@ -366,8 +462,11 @@ New input: {input}
             thinking_callback: Optional callback for streaming thoughts (thought, action, input, observation)
         """
         try:
-            # Set up callbacks for streaming thinking
-            callbacks = []
+            # Reset token counter for this conversation
+            self.token_counter.reset()
+
+            # Set up callbacks for streaming thinking and token counting
+            callbacks = [self.token_counter]
             if self.config.show_thinking and thinking_callback:
                 streaming_handler = StreamingThinkingHandler(thinking_callback)
                 callbacks.append(streaming_handler)
@@ -377,6 +476,19 @@ New input: {input}
                 "chat_history": chat_history or ""
             }, config={"callbacks": callbacks})
 
+            # Get token usage summary
+            token_usage = self.token_counter.get_summary()
+
+            # Log token usage
+            if token_usage['total_tokens'] > 0:
+                logger.info(f"Total token usage for this conversation: {token_usage}")
+
+                # Warn if approaching common limits
+                if token_usage['total_tokens'] > 100000:  # 100K tokens
+                    logger.warning(f"High token usage detected: {token_usage['total_tokens']} tokens")
+                elif token_usage['total_tokens'] > 50000:  # 50K tokens
+                    logger.info(f"Moderate token usage: {token_usage['total_tokens']} tokens")
+
             if self.config.show_thinking:
                 # Parse the intermediate steps to extract thinking process
                 thinking_steps = self._parse_thinking_steps(result)
@@ -385,12 +497,25 @@ New input: {input}
                 logger.info(f"Thinking enabled - found {len(thinking_steps)} steps")
                 logger.info(f"Result keys: {list(result.keys())}")
 
-                return {
+                response_dict = {
                     "output": result["output"],
                     "thinking_steps": thinking_steps
                 }
+
+                # Add token usage if available
+                if token_usage['total_tokens'] > 0:
+                    response_dict["token_usage"] = token_usage
+
+                return response_dict
             else:
-                return result["output"]
+                # Return simple response, but include token usage if verbose
+                if self.config.verbose and token_usage['total_tokens'] > 0:
+                    return {
+                        "output": result["output"],
+                        "token_usage": token_usage
+                    }
+                else:
+                    return result["output"]
         except Exception as e:
             logger.error(f"Error processing message: {e}")
             error_msg = f"I encountered an error while processing your request: {str(e)}"
