@@ -18,8 +18,8 @@ class SippyPayloadDetailsTool(SippyBaseTool):
     """Tool for getting detailed OpenShift release payload information."""
     
     name: str = "get_payload_details"
-    description: str = "Get detailed failure information for a specific OpenShift release payload including failed blocking jobs and their prow job IDs. Shows which jobs failed but does NOT automatically suggest log analysis. Use this ONLY when user asks for details about WHY a payload failed. For basic payload status, use get_release_payloads first. Input: payload name (e.g., '4.20.0-0.nightly-2025-06-17-061341')"
-    
+    description: str = "Get comprehensive information for a specific OpenShift release payload including changelog details (component updates, rebuilt images, updated images with pull requests PRs), failed blocking jobs with clickable links to Prow jobs, GitHub PRs, commits, and Jira issues. Shows which jobs failed but does NOT automatically suggest log analysis. Use this ONLY when user asks for details about a specific payload. For basic payload status, use get_release_payloads first. Input: payload name (e.g., '4.20.0-0.nightly-2025-06-17-061341')"
+
     # Release controller API base URL
     release_controller_url: str = Field(
         default="https://amd64.ocp.releases.ci.openshift.org/api/v1",
@@ -156,17 +156,18 @@ class SippyPayloadDetailsTool(SippyBaseTool):
             results = data.get("results", {})
             upgrades_to = data.get("upgradesTo", [])
             change_log = data.get("changeLog", {})
+            change_log_json = data.get("changeLogJson", {})
         except Exception as e:
             logger.error(f"Error extracting data fields: {e}")
             logger.error(f"Data keys: {list(data.keys()) if isinstance(data, dict) else 'not a dict'}")
             return f"Error: Failed to parse payload data structure - {str(e)}"
 
         try:
-            # Build concise formatted response
+            # Build comprehensive formatted response
             result = f"**Payload Analysis: {name}**\n\n"
             result += f"**Status:** {self._get_status_emoji(phase)} {phase}\n\n"
 
-            # Analyze blocking jobs if payload was rejected/failed
+            # Analyze blocking jobs FIRST if payload was rejected/failed
             blocking_jobs = results.get("blockingJobs", {})
             if blocking_jobs:
                 failed_jobs = []
@@ -187,7 +188,10 @@ class SippyPayloadDetailsTool(SippyBaseTool):
                 if failed_jobs:
                     result += f"**Failed Blocking Jobs:**\n"
                     for job_name, prow_job_id, url in failed_jobs:
-                        result += f"• **{job_name}**\n"
+                        result += f"• **{job_name}**"
+                        if url:
+                            result += f" ([View Job]({url}))"
+                        result += "\n"
                         if prow_job_id:
                             result += f"  Job ID: `{prow_job_id}`\n"
                         result += "\n"
@@ -196,6 +200,10 @@ class SippyPayloadDetailsTool(SippyBaseTool):
                     if include_job_analysis:
                         failed_jobs_dict = {job[0]: {"url": job[2]} for job in failed_jobs}
                         result += self._suggest_job_analysis(failed_jobs_dict, max_jobs_to_analyze)
+
+            # Add changelog information if available (after blocking jobs)
+            if change_log_json:
+                result += self._format_changelog(change_log_json)
 
             return result
 
@@ -247,3 +255,119 @@ class SippyPayloadDetailsTool(SippyBaseTool):
             return result
 
         return ""
+
+    def _format_changelog(self, change_log_json: Dict[str, Any]) -> str:
+        """Format the changelog information for display."""
+        if not change_log_json:
+            return ""
+
+        result = "**📋 Changelog Information**\n\n"
+
+        # Component updates
+        components = change_log_json.get("components", [])
+        if components:
+            result += f"**🔧 Component Updates ({len(components)}):**\n"
+            for component in components:
+                name = component.get("name", "Unknown")
+                version = component.get("version", "Unknown")
+                from_version = component.get("from", "")
+
+                result += f"• **{name}:** {version}"
+                if from_version and from_version != version:
+                    result += f" (from {from_version})"
+                result += "\n"
+            result += "\n"
+
+        # Rebuilt images
+        rebuilt_images = change_log_json.get("rebuiltImages", [])
+        if rebuilt_images:
+            result += f"**🔨 Rebuilt Images ({len(rebuilt_images)}):**\n"
+            for image in rebuilt_images[:5]:  # Limit to first 5 to avoid overwhelming output
+                name = image.get("name", "Unknown")
+                short_commit = image.get("shortCommit", "")
+                commit = image.get("commit", "")
+                path = image.get("path", "")
+
+                result += f"• **{name}**"
+                if short_commit and path:
+                    # Create link to specific commit
+                    commit_url = f"{path}/commit/{commit}" if commit else f"{path}/commit/{short_commit}"
+                    result += f" ([commit: {short_commit}]({commit_url}))"
+                elif short_commit:
+                    result += f" (commit: {short_commit})"
+
+                if path:
+                    repo_name = path.split("/")[-1] if "/" in path else path
+                    result += f" - [{repo_name}]({path})"
+                result += "\n"
+
+            if len(rebuilt_images) > 5:
+                result += f"• ... and {len(rebuilt_images) - 5} more rebuilt images\n"
+            result += "\n"
+
+        # Pull Requests from updated images
+        updated_images = change_log_json.get("updatedImages", [])
+        if updated_images:
+            result += f"**📦 Pull Requests ({len(updated_images)} repositories):**\n"
+            for image in updated_images[:10]:  # Limit to first 10 to avoid overwhelming output
+                name = image.get("name", "Unknown")
+                commits = image.get("commits", [])
+                path = image.get("path", "")
+
+                # Extract repository name and base URL for PRs
+                repo_base_url = ""
+                repo_name = name
+                if path and "github.com" in path:
+                    # Extract repo URL from path like "https://github.com/openshift/console/tree/..."
+                    repo_parts = path.split("/tree/")[0] if "/tree/" in path else path
+                    repo_base_url = repo_parts
+                    repo_name = repo_parts.split("/")[-1] if "/" in repo_parts else name
+
+                result += f"• **{name}** ({repo_name})\n"
+
+                # Show key commits/PRs with links
+                for commit in commits[:3]:  # Limit to first 3 commits per image
+                    subject = commit.get("subject", "")
+                    pull_id = commit.get("pullID", "")
+                    pull_url = commit.get("pullURL", "")
+                    issues = commit.get("issues", {})
+
+                    result += f"  - {subject}"
+                    if pull_id and pull_url:
+                        result += f" ([PR #{pull_id}]({pull_url}))"
+                    elif pull_id and repo_base_url:
+                        # Construct PR URL if not provided
+                        pr_url = f"{repo_base_url}/pull/{pull_id}"
+                        result += f" ([PR #{pull_id}]({pr_url}))"
+                    elif pull_id:
+                        result += f" (PR #{pull_id})"
+
+                    if issues:
+                        issue_links = []
+                        for issue_key, issue_url in issues.items():
+                            if issue_url:
+                                issue_links.append(f"[{issue_key}]({issue_url})")
+                            else:
+                                issue_links.append(issue_key)
+                        result += f" [{', '.join(issue_links)}]"
+                    result += "\n"
+
+                if len(commits) > 3:
+                    result += f"  - ... and {len(commits) - 3} more commits\n"
+                result += "\n"
+
+            if len(updated_images) > 10:
+                result += f"• ... and {len(updated_images) - 10} more repositories\n"
+            result += "\n"
+
+        return result
+
+    def _format_timestamp(self, timestamp: str) -> str:
+        """Format ISO timestamp to readable format."""
+        try:
+            from datetime import datetime
+            # Parse ISO format: 2025-06-18T03:46:03Z
+            dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+            return dt.strftime('%Y-%m-%d %H:%M:%S UTC')
+        except Exception:
+            return timestamp

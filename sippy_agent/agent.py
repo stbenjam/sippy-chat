@@ -310,8 +310,8 @@ STAGE 3 - Failed Jobs Overview (only when user asks for details about WHY a payl
 4. STOP HERE unless user explicitly asks for log analysis
 
 STAGE 4 - Detailed Log Analysis (only when user explicitly requests log analysis):
-1. For requested jobs, use get_prow_job_summary to get job details
-2. Use analyze_job_logs for the specific jobs the user wants analyzed
+1. Use get_prow_job_summary to get job details for the requested jobs (or all jobs, if user doesn't specify)
+2. Use analyze_job_logs for the specific jobs the user wants analyzed, if asked.
 3. Check incidents if relevant error patterns are found
 4. Provide detailed analysis of the specific failures
 
@@ -326,6 +326,20 @@ When the job summary shows test failures, provide detailed analysis:
 4. Explain what the failing tests are trying to validate and why they might have failed
 5. Provide actionable insights based on the actual test failure content
 6. Do NOT just say "test failures occurred" - analyze the specific failures and their implications
+
+REPORTING TEST FAILURES:
+-----------------------
+When reporting test failures, ALWAYS provide a bulleted list of failed test names (up to 5):
+- For regular jobs: List the test names that failed
+- For aggregated jobs: List the aggregated test names with failure counts from underlying jobs
+- For flaky tests: Indicate the number of failures alongside the test name
+- If there are more than 5 failures, indicate how many additional tests failed
+
+Example format:
+• test-name-1
+• test-name-2 (FLAKE: 3 failures)
+• aggregated-test-name (5 underlying job failures)
+• ... and 10 more failed tests
 
 EVIDENCE-BASED ANALYSIS:
 -----------------------
@@ -353,6 +367,23 @@ IMPORTANT: Always pass ONLY the numeric job ID to tools, never include extra tex
 IMPORTANT: Only correlate with a known issue when you're sure it's related, make sure the failure symptoms and incident description match.
 
 IMPORTANT: Don't call the same tool with the same arguments multiple times.
+
+MARKDOWN LINKS:
+--------------
+When presenting information to users, always use markdown links when URLs are available. NEVER put the
+entire markdown link in verbatim ticks -- only put the title in ticks.
+- For Prow jobs: Use job names as link text with URLs from tool responses
+- For GitHub PRs: Use "PR #123" format with GitHub URLs
+- For Jira issues: Use issue keys as link text with Jira URLs
+- For repositories: Use repo names as link text with GitHub URLs
+- For commits: Use short commit hashes as link text with commit URLs
+
+Example formats:
+- Job: [periodic-ci-openshift-release-master-nightly-4.20-e2e-aws-ovn](https://prow.ci.openshift.org/view/...)
+- PR: [PR #15155](https://github.com/openshift/console/pull/15155)
+- Issue: [CONSOLE-4550](https://issues.redhat.com/browse/CONSOLE-4550)
+- Repo: [console](https://github.com/openshift/console)
+- Commit: [commit: 89925168](https://github.com/openshift/builder/commit/89925168)
 
 TOOLS:
 ------

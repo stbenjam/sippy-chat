@@ -213,10 +213,18 @@ class JUnitParserTool(SippyBaseTool):
             result += "This means all statistical aggregations met their required pass thresholds.\n"
             return result
 
-        result += f"**❌ Failed Aggregated Tests ({len(aggregated_tests)} total):**\n"
+        total_failed_tests = len(aggregated_tests)
+        # Limit to 25 aggregated tests maximum
+        max_tests_to_show = 25
+        tests_to_show = aggregated_tests[:max_tests_to_show]
+
+        result += f"**❌ Failed Aggregated Tests ({total_failed_tests} total"
+        if total_failed_tests > max_tests_to_show:
+            result += f", showing first {max_tests_to_show}"
+        result += "):**\n"
         result += "These tests failed their statistical aggregation requirements.\n\n"
 
-        for i, test_data in enumerate(aggregated_tests, 1):
+        for i, test_data in enumerate(tests_to_show, 1):
             testcase_name = test_data.get('testcase_name', f'Test {i}')
             testsuitename = test_data.get('testsuitename', 'Unknown')
             summary = test_data.get('summary', 'No summary available')
@@ -293,6 +301,11 @@ class JUnitParserTool(SippyBaseTool):
                 result += "\n"
 
             result += "---\n\n"
+
+        # Add note if there are more tests than shown
+        if total_failed_tests > max_tests_to_show:
+            remaining = total_failed_tests - max_tests_to_show
+            result += f"**Note:** Results truncated to first {max_tests_to_show} entries. Total failed aggregated tests found: {total_failed_tests} ({remaining} more not shown)\n\n"
 
         # Add guidance for next steps
         if aggregated_tests:
@@ -416,13 +429,13 @@ class JUnitParserTool(SippyBaseTool):
                 return f"No results found for test: {specific_test}"
             else:
                 return "No test failures or flakes found in the JUnit XML file."
-        
+
         if specific_test:
             header = f"**Test Results for: {specific_test}**\n\n"
         else:
             header = f"**JUnit Test Failures and Flakes**\n\n"
             header += f"Found {len(results)} test failures/flakes:\n\n"
-        
+
         formatted_results = []
         
         for i, result in enumerate(results, 1):
