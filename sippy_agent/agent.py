@@ -102,19 +102,12 @@ class TokenCountingHandler(BaseCallbackHandler):
         self.prompt_tokens = 0
         self.completion_tokens = 0
         self.call_count = 0
-        self.input_texts = []
-        self.output_texts = []
-
-    def on_llm_start(self, serialized: Dict[str, Any], prompts: List[str], **kwargs) -> None:
-        """Called when LLM starts generating."""
-        # Store input prompts for token estimation
-        self.input_texts.extend(prompts)
 
     def on_llm_end(self, response: LLMResult, **kwargs) -> None:
         """Called when LLM finishes generating."""
         self.call_count += 1
 
-        # Try to extract token usage from response (OpenAI format)
+        # Try to extract token usage from response
         if hasattr(response, 'llm_output') and response.llm_output:
             token_usage = response.llm_output.get('token_usage', {})
             if token_usage:
@@ -126,10 +119,9 @@ class TokenCountingHandler(BaseCallbackHandler):
                            f"Prompt: {token_usage.get('prompt_tokens', 0)}, "
                            f"Completion: {token_usage.get('completion_tokens', 0)}, "
                            f"Total: {token_usage.get('total_tokens', 0)}")
-                return
 
         # For Gemini models, try alternative token counting
-        if hasattr(response, 'generations') and response.generations:
+        elif hasattr(response, 'generations') and response.generations:
             for generation_list in response.generations:
                 for generation in generation_list:
                     if hasattr(generation, 'generation_info') and generation.generation_info:
@@ -147,27 +139,7 @@ class TokenCountingHandler(BaseCallbackHandler):
                                        f"Prompt: {prompt_tokens}, "
                                        f"Completion: {completion_tokens}, "
                                        f"Total: {total_tokens}")
-                            return
-
-        # Fallback: estimate tokens if no usage data available
-        # Store output texts for estimation
-        for generation_list in response.generations:
-            for generation in generation_list:
-                self.output_texts.append(generation.text)
-
-        # Rough estimation: ~4 characters per token for English text
-        estimated_prompt_tokens = sum(len(text) // 4 for text in self.input_texts[-len(response.generations):])
-        estimated_completion_tokens = sum(len(text) // 4 for text in self.output_texts[-len(response.generations):])
-        estimated_total = estimated_prompt_tokens + estimated_completion_tokens
-
-        self.total_tokens += estimated_total
-        self.prompt_tokens += estimated_prompt_tokens
-        self.completion_tokens += estimated_completion_tokens
-
-        logger.info(f"LLM Call {self.call_count} (Estimated): "
-                   f"Prompt: ~{estimated_prompt_tokens}, "
-                   f"Completion: ~{estimated_completion_tokens}, "
-                   f"Total: ~{estimated_total}")
+                            break
 
     def get_summary(self) -> Dict[str, int]:
         """Get token usage summary."""
@@ -184,8 +156,6 @@ class TokenCountingHandler(BaseCallbackHandler):
         self.prompt_tokens = 0
         self.completion_tokens = 0
         self.call_count = 0
-        self.input_texts = []
-        self.output_texts = []
 
 
 class SippyAgent:
@@ -322,20 +292,24 @@ PAYLOAD ANALYSIS WORKFLOW:
 -------------------------
 When users ask about release payloads, follow this conservative approach:
 
-STAGE 1 - Basic Status (for questions like "tell me about payload X"):
-1. Use get_release_payloads with the payload_name parameter to get basic status
-2. If the user doesn't provide a payload_name, use the release tool to find the most recent release
-3. Report whether the payload was accepted/rejected/ready
-4. If rejected, offer to investigate WHY: "This payload was rejected! Would you like details about why?"
-5. STOP HERE unless user asks for details
+STAGE 1 - Generic Release Information (for questions like "What is the latest payload for 4.20?"):
+1. Use get_release_payloads with release_version and stream_type to get list of recent payloads
+2. Report the most recent payload name and basic status information
+3. If user asks about a specific payload, proceed to STAGE 2
 
-STAGE 2 - Failed Jobs Overview (only when user asks for details about WHY a payload failed):
-1. Use get_payload_details to get failed job IDs and basic failure reasons
+STAGE 2 - Specific Payload Status (for questions like "tell me about payload X"):
+1. Use get_payload_details with the specific payload name to get detailed status
+2. Report whether the payload was accepted/rejected/ready with failure summary
+3. If rejected, offer to investigate WHY: "This payload was rejected! Would you like details about why?"
+4. STOP HERE unless user asks for details
+
+STAGE 3 - Failed Jobs Overview (only when user asks for details about WHY a payload failed):
+1. The get_payload_details tool already provides failed job IDs and basic failure reasons
 2. Show a summary of failed jobs with their basic failure reasons
 3. Offer to analyze specific jobs: "Would you like me to analyze the logs for any of these specific jobs?"
 4. STOP HERE unless user explicitly asks for log analysis
 
-STAGE 3 - Detailed Log Analysis (only when user explicitly requests log analysis):
+STAGE 4 - Detailed Log Analysis (only when user explicitly requests log analysis):
 1. For requested jobs, use get_prow_job_summary to get job details
 2. Use analyze_job_logs for the specific jobs the user wants analyzed
 3. Check incidents if relevant error patterns are found

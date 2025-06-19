@@ -18,7 +18,7 @@ class SippyReleasePayloadTool(SippyBaseTool):
     """Tool for getting OpenShift release payload information."""
     
     name: str = "get_release_payloads"
-    description: str = "Get OpenShift release payload information and basic status. When asked for 'latest' or 'last' payload, returns the most recent payload's name and status. For basic payload info, use this tool first. Input: release version (e.g., '4.20') and optional stream type ('nightly' or 'ci', defaults to 'nightly')"
+    description: str = "Get generic OpenShift release payload information for a release version and stream. Returns list of recent payloads with basic status. When asked for 'latest' or 'last' payload, returns the most recent payload's name and status. For specific payload details, use get_payload_details tool. Input: release version (e.g., '4.20') and optional stream type ('nightly' or 'ci', defaults to 'nightly')"
     
     # Release controller API base URL
     release_controller_url: str = Field(
@@ -29,7 +29,7 @@ class SippyReleasePayloadTool(SippyBaseTool):
     class ReleasePayloadInput(SippyToolInput):
         release_version: str = Field(description="Release version (e.g., '4.20', '4.19')")
         stream_type: Optional[str] = Field(
-            default="nightly", 
+            default="nightly",
             description="Stream type: 'nightly' or 'ci' (defaults to 'nightly')"
         )
         include_ready: Optional[bool] = Field(
@@ -40,10 +40,6 @@ class SippyReleasePayloadTool(SippyBaseTool):
             default=10,
             description="Maximum number of payloads to return (defaults to 10)"
         )
-        payload_name: Optional[str] = Field(
-            default=None,
-            description="Specific payload name to get basic status for (e.g., '4.20.0-0.nightly-2025-06-17-061341')"
-        )
     
     args_schema: Type[SippyToolInput] = ReleasePayloadInput
     
@@ -52,16 +48,9 @@ class SippyReleasePayloadTool(SippyBaseTool):
         release_version: str,
         stream_type: Optional[str] = "nightly",
         include_ready: Optional[bool] = False,
-        limit: Optional[int] = 10,
-        payload_name: Optional[str] = None
+        limit: Optional[int] = 10
     ) -> str:
         """Get release payload information from the release controller API."""
-
-        # If a specific payload name is provided, get basic status for that payload
-        if payload_name:
-            # Clean the payload name in case it includes parameter syntax
-            clean_payload_name = self._clean_payload_name(payload_name)
-            return self._get_payload_basic_status(clean_payload_name)
 
         # Validate and clean inputs
         stream_type = stream_type or "nightly"
@@ -247,101 +236,4 @@ class SippyReleasePayloadTool(SippyBaseTool):
             logger.error(f"Error getting latest payload: {e}")
             return None
 
-    def _get_payload_basic_status(self, payload_name: str) -> str:
-        """Get basic status information for a specific payload."""
-        try:
-            # Extract release stream from payload name
-            release_stream = self._extract_release_stream(payload_name)
-            if not release_stream:
-                return f"Error: Could not extract release stream from payload name '{payload_name}'. Expected format like '4.20.0-0.nightly-2025-06-17-061341'"
 
-            # Get the payload list to find this specific payload
-            endpoint = f"{self.release_controller_url.rstrip('/')}/releasestream/{release_stream}/tags"
-
-            with httpx.Client(timeout=30.0) as client:
-                response = client.get(endpoint)
-                response.raise_for_status()
-                data = response.json()
-
-                tags = data.get("tags", [])
-
-                # Find the specific payload
-                target_payload = None
-                for tag in tags:
-                    if tag.get("name") == payload_name:
-                        target_payload = tag
-                        break
-
-                if not target_payload:
-                    return f"Error: Payload '{payload_name}' not found in release stream '{release_stream}'"
-
-                # Format basic status
-                phase = target_payload.get("phase", "Unknown")
-                pull_spec = target_payload.get("pullSpec", "")
-
-                # Extract timestamp from name if possible
-                timestamp_match = re.search(r'(\d{4}-\d{2}-\d{2}-\d{6})', payload_name)
-                timestamp_str = ""
-                if timestamp_match:
-                    timestamp_raw = timestamp_match.group(1)
-                    if len(timestamp_raw) == 15:  # YYYY-MM-DD-HHMMSS
-                        formatted_time = f"{timestamp_raw[:4]}-{timestamp_raw[5:7]}-{timestamp_raw[8:10]} {timestamp_raw[11:13]}:{timestamp_raw[13:15]}:00"
-                        timestamp_str = f" (Created: {formatted_time})"
-
-                # Status emoji
-                status_emoji = {
-                    "accepted": "✅",
-                    "rejected": "❌",
-                    "ready": "🔄",
-                    "failed": "💥"
-                }.get(phase.lower(), "❓")
-
-                result = f"**OpenShift Release Payload Status**\n\n"
-                result += f"**Payload:** {payload_name}{timestamp_str}\n"
-                result += f"**Status:** {status_emoji} {phase}\n"
-                result += f"**Release Stream:** {release_stream}\n"
-
-                if pull_spec:
-                    result += f"**Pull Spec:** `{pull_spec}`\n"
-
-                # Add contextual message based on status
-                if phase.lower() == "rejected":
-                    result += f"\n❌ **This payload was rejected due to blocking job failures.**\n"
-                    result += f"💡 **Want to know why?** Use `get_payload_details` with payload name `{payload_name}` for detailed failure analysis.\n"
-                elif phase.lower() == "accepted":
-                    result += f"\n✅ **This payload was accepted and is ready for use.**\n"
-                elif phase.lower() == "ready":
-                    result += f"\n🔄 **This payload is ready but not yet tested by blocking jobs.**\n"
-
-                return result
-
-        except Exception as e:
-            logger.error(f"Error getting payload basic status: {e}")
-            return f"Error: Failed to get payload status - {str(e)}"
-
-    def _clean_payload_name(self, payload_name: str) -> str:
-        """Clean payload name from common parameter syntax issues."""
-        # Remove common parameter syntax patterns
-        cleaned = payload_name.strip()
-
-        # Handle cases like "payload name = '4.20.0-0.nightly-2025-06-17-061341'"
-        if '=' in cleaned:
-            cleaned = cleaned.split('=')[-1].strip()
-
-        # Remove quotes
-        cleaned = cleaned.strip('\'"')
-
-        # Extract just the payload name pattern
-        payload_pattern = re.search(r'(\d+\.\d+\.0-0\.(nightly|ci)-\d{4}-\d{2}-\d{2}-\d{6})', cleaned)
-        if payload_pattern:
-            return payload_pattern.group(1)
-
-        return cleaned
-
-    def _extract_release_stream(self, payload_name: str) -> Optional[str]:
-        """Extract release stream from payload name."""
-        # Expected format: 4.20.0-0.nightly-2025-06-17-061341
-        match = re.match(r'^(\d+\.\d+\.0-0\.(nightly|ci))-\d{4}-\d{2}-\d{2}-\d{6}$', payload_name)
-        if match:
-            return match.group(1)
-        return None
