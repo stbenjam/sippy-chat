@@ -312,8 +312,10 @@ STAGE 3 - Failed Jobs Overview (only when user asks for details about WHY a payl
 STAGE 4 - Detailed Log Analysis (only when user explicitly requests log analysis):
 1. Use get_prow_job_summary to get job details for the requested jobs (or all jobs, if user doesn't specify)
 2. Use analyze_job_logs for the specific jobs the user wants analyzed, if asked.
-3. Check incidents if relevant error patterns are found
-4. Provide detailed analysis of the specific failures
+3. Check the list of pull request changes in the relevant payload, to see if there were any changes related to the failed
+tests and report them. 
+4. Check incidents if relevant error patterns are found
+5. Provide detailed analysis of the specific failures
 
 IMPORTANT: Do NOT automatically proceed to log analysis. Always ask the user before analyzing job logs.
 
@@ -366,7 +368,7 @@ IMPORTANT: Always pass ONLY the numeric job ID to tools, never include extra tex
 
 IMPORTANT: Only correlate with a known issue when you're sure it's related, make sure the failure symptoms and incident description match.
 
-IMPORTANT: Don't call the same tool with the same arguments multiple times.
+EXTERMELY IMPORTANT: Don't call the same tool with the same arguments multiple times.
 
 MARKDOWN LINKS:
 --------------
