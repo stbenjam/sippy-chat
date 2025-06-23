@@ -21,6 +21,7 @@ from .tools import (
     SippyProwJobSummaryTool,
     SippyLogAnalyzerTool,
     SippyJiraIncidentTool,
+    SippyJiraTicketCreatorTool,
     SippyReleasePayloadTool,
     SippyPayloadDetailsTool,
     SippyReleasesTool,
@@ -232,6 +233,7 @@ class SippyAgent:
                 jira_username=self.config.jira_username,
                 jira_token=self.config.jira_token
             ),
+            SippyJiraTicketCreatorTool(),
             SippyReleasePayloadTool(),
             SippyPayloadDetailsTool(),
             SippyReleasesTool(sippy_api_url=self.config.sippy_api_url),
@@ -471,6 +473,51 @@ IMPORTANT: Always pass ONLY the numeric job ID to tools, never include extra tex
 IMPORTANT: Only correlate with a known issue when you're sure it's related, make sure the failure symptoms and incident description match.
 
 EXTERMELY IMPORTANT: Don't call the same tool with the same arguments multiple times.
+
+JIRA TICKET CREATION:
+---------------------
+🚨 CRITICAL SAFETY RULES FOR JIRA TICKET CREATION:
+
+1. **USER CONFIRMATION REQUIRED**: NEVER create a Jira ticket without explicit user confirmation
+2. **ONE TICKET PER SESSION**: Maximum of 1 ticket creation per chat session (safety limit)
+3. **PREVIEW FIRST**: Always show ticket preview and ask for approval before creating
+4. **EXPLICIT REQUEST**: Only offer ticket creation when:
+   - User explicitly asks to create a ticket, OR
+   - You identify a CRITICAL issue (like rejected release payloads) that clearly needs tracking
+
+WHEN TO OFFER JIRA TICKET CREATION:
+- Critical release payload failures with multiple job failures
+- Systematic test failures affecting payload acceptance
+- Infrastructure issues causing widespread job failures
+- When you identify a clear pattern that needs incident tracking
+
+HOW TO USE create_jira_ticket:
+1. First analyze the problem thoroughly using other tools
+2. If it's a critical issue that needs tracking, offer to create a ticket
+3. The tool will show a preview and ask for user confirmation
+4. Only proceed if user explicitly approves
+
+FOR RELEASE PAYLOAD ISSUES:
+When you identify critical problems in rejected release payloads:
+- Analyze the failed jobs and test patterns first
+- If it's a significant issue affecting payload acceptance
+- Offer: "This looks like a critical issue that should be tracked. Would you like me to create a TRT incident ticket?"
+- Use these settings for payload issues:
+  * Project: TRT
+  * Type: Story
+  * Priority: Critical
+  * Labels: trt-incident
+  * Title: Descriptive summary of the issue (e.g., "AWS Single Node Jobs Failing must-gather tests")
+  * Description: Wiki markup formatted with problem summary, job links, and failure details
+
+EXAMPLE USAGE:
+```
+Thought: I've identified multiple payload failures with a clear pattern of must-gather test failures. This appears to be a critical issue that should be tracked.
+Action: create_jira_ticket
+Action Input: {{"project": "TRT", "title": "AWS Single Node Jobs Failing must-gather tests on disk space issues", "description": "h2. Release Payload Issue Detected\\n\\nMultiple AWS single node jobs are failing must-gather tests due to insufficient disk space...", "issue_type": "Story", "priority": "Critical", "labels": ["trt-incident"], "confirm_creation": false}}
+```
+
+🚨 REMEMBER: The tool will ALWAYS show a preview first and require user confirmation. Never set confirm_creation=true unless the user has already explicitly approved the exact ticket details.
 
 MARKDOWN LINKS:
 --------------
