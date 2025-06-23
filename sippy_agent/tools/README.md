@@ -12,6 +12,7 @@ tools/
 ├── sippy_job_summary.py       # Job run summary tool
 ├── sippy_log_analyzer.py      # Log analysis tool
 ├── jira_incidents.py          # Jira incident tracking tool
+├── jira_creator.py            # Jira ticket creation tool
 ├── release_payloads.py        # OpenShift release payload tool
 ├── payload_details.py         # Detailed payload analysis tool
 ├── sippy_releases.py          # OpenShift release information tool
@@ -33,6 +34,7 @@ tools/
 
 ### External Integration Tools
 - **SippyJiraIncidentTool** (`jira_incidents.py`): Queries Jira for known open incidents in the TRT project to correlate with job failures
+- **SippyJiraTicketCreatorTool** (`jira_creator.py`): Creates Jira tickets with user confirmation. Requires JIRA_TOKEN environment variable for authentication. **IMPORTANT**: This tool will never create more than one ticket per chat session and always requires explicit user confirmation before creating any ticket.
 
 ### Test Analysis Tools
 - **JUnitParserTool** (`junit_parser.py`): Parses JUnit XML files from URLs to extract test failures and flakes with intelligent flake detection. Also handles aggregated job results embedded as YAML in JUnit XML system-out sections.
@@ -139,3 +141,44 @@ When adding new tools, consider:
 - Integration tests with actual APIs (when appropriate)
 - Mock tests for external dependencies
 - Error condition testing
+
+## Jira Ticket Creation
+
+The **SippyJiraTicketCreatorTool** allows the Sippy Agent to create Jira tickets when critical issues are identified, particularly for release payload problems. 
+
+### Key Features:
+- **Safety First**: Never creates tickets without explicit user confirmation
+- **Session Limit**: Maximum of 1 ticket per chat session to prevent spam
+- **Authentication**: Uses JIRA_TOKEN environment variable for API access
+- **Flexible Fields**: Supports all standard Jira fields (project, type, priority, title, description, labels)
+
+### Special Behavior for Release Payload Issues:
+When the agent identifies problems in rejected release payloads, it can offer to create an incident ticket with these defaults:
+- **Project**: TRT
+- **Type**: Story  
+- **Priority**: Critical
+- **Labels**: trt-incident
+- **Description**: Formatted with Wiki Markup including problem summary, example job links, and failure details
+
+### Configuration:
+Set the `JIRA_TOKEN` environment variable with your Jira API token. The tool connects to `https://issues.redhat.com/` by default.
+
+### Usage Example:
+The agent will first show a preview of the ticket to be created and ask for confirmation:
+```
+📋 **Ticket Preview**
+
+**Project**: TRT
+**Type**: Story
+**Priority**: Critical
+**Title**: AWS Single Node Jobs Failing must-gather tests on not having enough disk
+
+**Description**:
+h2. Release Payload Issue Detected
+
+Multiple AWS single node jobs are failing must-gather tests due to insufficient disk space...
+
+**Labels**: trt-incident
+
+⚠️ **User Confirmation Required**: I need your explicit approval before creating this Jira ticket...
+```
