@@ -29,23 +29,32 @@ class SippyProwJobSummaryTool(SippyBaseTool):
     
     args_schema: Type[SippyToolInput] = ProwJobSummaryInput
     
-    def _run(self, prow_job_run_id: str, sippy_api_url: Optional[str] = None) -> str:
+    def _run(self, *args, **kwargs: Any) -> str:
         """Get prow job run summary from Sippy API."""
+        
+        input_data = {}
+        if args and isinstance(args[0], dict):
+            input_data.update(args[0])
+        input_data.update(kwargs)
+
+        # Pydantic model will have validated and filled in defaults
+        args = self.ProwJobSummaryInput(**input_data)
+        
         # Use provided URL or fall back to instance URL
-        api_url = sippy_api_url or self.sippy_api_url
+        api_url = args.sippy_api_url or self.sippy_api_url
         
         if not api_url:
             return "Error: No Sippy API URL configured. Please set SIPPY_API_URL environment variable or provide sippy_api_url parameter."
         
         # Clean and validate the job ID - extract just the numeric part
-        clean_job_id = str(prow_job_run_id).strip()
+        clean_job_id = str(args.prow_job_run_id).strip()
         # Extract just the numeric part if there's extra text
         import re
         job_id_match = re.search(r'\b(\d{10,})\b', clean_job_id)
         if job_id_match:
             clean_job_id = job_id_match.group(1)
         elif not clean_job_id.isdigit():
-            return f"Error: Invalid job ID format. Expected numeric ID, got: {prow_job_run_id}"
+            return f"Error: Invalid job ID format. Expected numeric ID, got: {args.prow_job_run_id}"
         
         # Construct the API endpoint
         endpoint = f"{api_url.rstrip('/')}/api/job/run/summary"

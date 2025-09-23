@@ -95,17 +95,6 @@ class SippyWebServer:
         async def chat(request: ChatRequest):
             """Process a chat message and return the response."""
             try:
-                # Convert chat history to context string
-                chat_history_context = ""
-                if request.chat_history:
-                    history_parts = []
-                    for msg in request.chat_history[-3:]:  # Last 3 exchanges
-                        if msg.role == "user":
-                            history_parts.append(f"User: {msg.content}")
-                        elif msg.role == "assistant":
-                            history_parts.append(f"Assistant: {msg.content}")
-                    chat_history_context = "\n".join(history_parts)
-                
                 # Override thinking setting if provided
                 original_thinking = self.config.show_thinking
                 if request.show_thinking is not None:
@@ -114,7 +103,7 @@ class SippyWebServer:
                 
                 try:
                     # Process the message
-                    result = self.agent.chat(request.message, chat_history_context)
+                    result = self.agent.chat(request.message, request.chat_history)
                     
                     if isinstance(result, dict) and "thinking_steps" in result:
                         # Convert thinking steps to API format
@@ -165,19 +154,9 @@ class SippyWebServer:
                     
                     # Parse request
                     message = request_data.get("message", "")
-                    chat_history = request_data.get("chat_history", [])
+                    chat_history_data = request_data.get("chat_history", [])
+                    chat_history = [ChatMessage(**msg) for msg in chat_history_data]
                     show_thinking = request_data.get("show_thinking", self.config.show_thinking)
-                    
-                    # Convert chat history to context
-                    chat_history_context = ""
-                    if chat_history:
-                        history_parts = []
-                        for msg in chat_history[-3:]:
-                            if msg.get("role") == "user":
-                                history_parts.append(f"User: {msg.get('content', '')}")
-                            elif msg.get("role") == "assistant":
-                                history_parts.append(f"Assistant: {msg.get('content', '')}")
-                        chat_history_context = "\n".join(history_parts)
                     
                     # For WebSocket, we'll disable the streaming callback and just send the final result
                     # The real-time streaming is complex to implement correctly with the current agent architecture
@@ -189,7 +168,7 @@ class SippyWebServer:
 
                     try:
                         # Process message (without streaming for now)
-                        result = self.agent.chat(message, chat_history_context)
+                        result = self.agent.chat(message, chat_history)
 
                         # If thinking was enabled, send thinking steps first
                         if show_thinking and isinstance(result, dict) and "thinking_steps" in result:

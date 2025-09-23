@@ -40,28 +40,35 @@ class SippyLogAnalyzerTool(SippyBaseTool):
     
     args_schema: Type[SippyToolInput] = LogAnalyzerInput
     
-    def _run(self, prow_job_run_id: str, path_glob: str = "*build-log*",
-             text_regex: str = "[Ee]rror|[Ff]ail",
-             sippy_api_url: Optional[str] = None) -> str:
+    def _run(self, *args, **kwargs: Any) -> str:
         """Fetch and analyze job artifacts from Sippy API."""
+        
+        input_data = {}
+        if args and isinstance(args[0], dict):
+            input_data.update(args[0])
+        input_data.update(kwargs)
+        
+        # Pydantic model will have validated and filled in defaults
+        args = self.LogAnalyzerInput(**input_data)
+        
         # Use provided URL or fall back to instance URL
-        api_url = sippy_api_url or self.sippy_api_url
+        api_url = args.sippy_api_url or self.sippy_api_url
 
         if not api_url:
             return "Error: No Sippy API URL configured. Please set SIPPY_API_URL environment variable or provide sippy_api_url parameter."
 
         # Clean and validate the job ID - ensure it's just the numeric ID
-        clean_job_id = str(prow_job_run_id).strip()
+        clean_job_id = str(args.prow_job_run_id).strip()
         # Extract just the numeric part if there's extra text
         import re
         job_id_match = re.search(r'\b(\d{10,})\b', clean_job_id)
         if job_id_match:
             clean_job_id = job_id_match.group(1)
         elif not clean_job_id.isdigit():
-            return f"Error: Invalid job ID format. Expected numeric ID, got: {prow_job_run_id}"
+            return f"Error: Invalid job ID format. Expected numeric ID, got: {args.prow_job_run_id}"
 
         # Create cache key to prevent redundant calls
-        cache_key = f"{clean_job_id}:{path_glob}:{text_regex}"
+        cache_key = f"{clean_job_id}:{args.path_glob}:{args.text_regex}"
         if cache_key in self._cache:
             logger.info(f"Returning cached result for {cache_key}")
             return f"[CACHED RESULT]\n{self._cache[cache_key]}"
@@ -73,8 +80,8 @@ class SippyLogAnalyzerTool(SippyBaseTool):
             # Make the API request with correct parameter names
             params = {
                 "prowJobRuns": clean_job_id,  # Just the numeric ID
-                "pathGlob": path_glob,
-                "textRegex": text_regex
+                "pathGlob": args.path_glob,
+                "textRegex": args.text_regex
             }
             
             logger.info(f"Making request to {endpoint} with params: {params}")
@@ -87,7 +94,7 @@ class SippyLogAnalyzerTool(SippyBaseTool):
                 data = response.json()
 
                 # Format the response for better readability
-                result = format_log_analysis(data, clean_job_id, path_glob, text_regex)
+                result = format_log_analysis(data, clean_job_id, args.path_glob, args.text_regex)
 
                 # Cache the result to prevent redundant calls
                 self._cache[cache_key] = result

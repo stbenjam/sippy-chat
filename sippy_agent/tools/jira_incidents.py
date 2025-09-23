@@ -17,7 +17,7 @@ class SippyJiraIncidentTool(SippyBaseTool):
     """Tool for querying Jira for known open incidents in the TRT project."""
     
     name: str = "check_known_incidents"
-    description: str = "Check Jira for known open TRT incidents. ONLY use this when job errors suggest a correlation. Use specific keywords that match actual errors found in logs."
+    description: str = "Check Jira for all known open TRT incidents."
     
     # Add Jira configuration as proper fields
     jira_url: str = Field(default="https://issues.redhat.com", description="Jira instance URL")
@@ -25,47 +25,17 @@ class SippyJiraIncidentTool(SippyBaseTool):
     jira_token: Optional[str] = Field(default=None, description="Jira API token")
     
     class JiraIncidentInput(SippyToolInput):
-        search_terms: Optional[str] = Field(
-            default=None,
-            description="Optional search terms to filter incidents (e.g., 'registry', 'build11', 'timeout')"
-        )
         jira_url: Optional[str] = Field(default=None, description="Jira URL (optional, uses config if not provided)")
     
     args_schema: Type[SippyToolInput] = JiraIncidentInput
     
-    def _run(self, search_terms: Optional[str] = None, jira_url: Optional[str] = None) -> str:
+    def _run(self, jira_url: Optional[str] = None) -> str:
         """Query Jira for known open incidents."""
         # Use provided URL or fall back to instance URL
         api_url = jira_url or self.jira_url
         
         if not api_url:
             return "Error: No Jira URL configured. Please set JIRA_URL environment variable or provide jira_url parameter."
-        
-        # Clean up search terms - filter out common LLM artifacts
-        clean_search_terms = None
-        if search_terms:
-            # Remove common LLM response artifacts and clean up the input
-            search_terms = str(search_terms).strip()
-            
-            # Skip if it contains common LLM artifacts or is too long
-            skip_patterns = [
-                "none", "null", "no job", "let's", "we can", "this time",
-                "search for all", "open incidents", "trt project", "default value"
-            ]
-            
-            if (len(search_terms) > 50 or
-                any(pattern in search_terms.lower() for pattern in skip_patterns) or
-                search_terms.lower() in ["none", "null", ""]):
-                clean_search_terms = None
-            else:
-                # Extract meaningful keywords
-                import re
-                # Look for technical terms that might be relevant
-                tech_terms = re.findall(r'\b(registry|build\d+|timeout|error|fail|503|502|infrastructure|node|cluster|network)\b', search_terms.lower())
-                if tech_terms:
-                    clean_search_terms = ','.join(tech_terms[:3])  # Limit to 3 terms
-                else:
-                    clean_search_terms = None
         
         # Construct the Jira REST API endpoint
         endpoint = f"{api_url.rstrip('/')}/rest/api/2/search"
@@ -76,14 +46,6 @@ class SippyJiraIncidentTool(SippyBaseTool):
             'labels = "trt-incident"',
             'status not in (Closed, Done, Resolved)'
         ]
-        
-        # Add search terms if we have clean ones
-        if clean_search_terms:
-            # Split search terms and add them as text search
-            terms = [term.strip() for term in clean_search_terms.split(',') if term.strip()]
-            if terms:
-                text_search = ' OR '.join([f'text ~ "{term}"' for term in terms])
-                jql_parts.append(f'({text_search})')
         
         jql = ' AND '.join(jql_parts)
         
@@ -100,10 +62,7 @@ class SippyJiraIncidentTool(SippyBaseTool):
             if self.jira_username and self.jira_token:
                 auth = (self.jira_username, self.jira_token)
             
-            if clean_search_terms:
-                logger.info(f"Querying Jira with search terms: {clean_search_terms}")
-            else:
-                logger.info("Querying Jira for all open TRT incidents")
+            logger.info("Querying Jira for all open TRT incidents")
             logger.info(f"JQL: {jql}")
             
             # Make the API request
@@ -119,7 +78,7 @@ class SippyJiraIncidentTool(SippyBaseTool):
                 data = response.json()
                 
                 # Format the response
-                return self._format_jira_incidents(data, clean_search_terms)
+                return self._format_jira_incidents(data)
                 
         except httpx.HTTPStatusError as e:
             logger.error(f"HTTP error querying Jira: {e}")
@@ -139,20 +98,15 @@ class SippyJiraIncidentTool(SippyBaseTool):
             logger.error(f"Unexpected error querying Jira: {e}")
             return f"Error: Unexpected error - {str(e)}"
 
-    def _format_jira_incidents(self, data: Dict[str, Any], search_terms: Optional[str] = None) -> str:
+    def _format_jira_incidents(self, data: Dict[str, Any]) -> str:
         """Format the Jira incidents for display."""
         issues = data.get('issues', [])
         total = data.get('total', 0)
 
         if not issues:
-            if search_terms:
-                return f"No open TRT incidents found matching search terms: {search_terms}"
-            else:
-                return "No open TRT incidents found with 'trt-incident' label"
+            return "No open TRT incidents found with 'trt-incident' label"
 
         result = f"**Known Open Incidents**\n\n"
-        if search_terms:
-            result += f"**Search Terms:** {search_terms}\n"
         result += f"**Found {len(issues)} of {total} total incidents:**\n\n"
 
         for issue in issues:

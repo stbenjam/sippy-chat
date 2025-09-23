@@ -18,7 +18,7 @@ class SippyPayloadDetailsTool(SippyBaseTool):
     """Tool for getting detailed OpenShift release payload information."""
     
     name: str = "get_payload_details"
-    description: str = "Get comprehensive information for a specific OpenShift release payload including changelog details (component updates, rebuilt images, updated images with pull requests PRs), failed blocking jobs with clickable links to Prow jobs, GitHub PRs, commits, and Jira issues. Shows which jobs failed but does NOT automatically suggest log analysis. Use this ONLY when user asks for details about a specific payload. For basic payload status, use get_release_payloads first. Input: payload name (e.g., '4.20.0-0.nightly-2025-06-17-061341')"
+    description: str = "Get a JSON object with comprehensive information for a specific OpenShift release payload. Use this ONLY when user asks for details about a specific payload. For basic payload status, use get_release_payloads first. Input: payload name (e.g., '4.20.0-0.nightly-2025-06-17-061341')"
 
     # Release controller API base URL
     release_controller_url: str = Field(
@@ -47,19 +47,26 @@ class SippyPayloadDetailsTool(SippyBaseTool):
     
     def _run(
         self,
-        payload_name: str,
-        include_job_analysis: Optional[bool] = False,
-        max_jobs_to_analyze: Optional[int] = 5
-    ) -> str:
+        *args,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
         """Get detailed payload information from the release controller API."""
 
+        input_data = {}
+        if args and isinstance(args[0], dict):
+            input_data.update(args[0])
+        input_data.update(kwargs)
+
+        # Pydantic model will have validated and filled in defaults
+        args = self.PayloadDetailsInput(**input_data)
+
         # Clean the payload name in case it includes parameter syntax
-        clean_payload_name = self._clean_payload_name(payload_name)
+        clean_payload_name = self._clean_payload_name(args.payload_name)
 
         # Extract release stream from payload name
         release_stream = self._extract_release_stream(clean_payload_name)
         if not release_stream:
-            return f"Error: Could not extract release stream from payload name '{clean_payload_name}'. Expected format like '4.20.0-0.nightly-2025-06-17-061341'"
+            return {"error": f"Error: Could not extract release stream from payload name '{clean_payload_name}'. Expected format like '4.20.0-0.nightly-2025-06-17-061341'"}
         
         # Construct the API endpoint for payload details
         endpoint = f"{self.release_controller_url.rstrip('/')}/releasestream/{release_stream}/release/{clean_payload_name}"
@@ -80,7 +87,7 @@ class SippyPayloadDetailsTool(SippyBaseTool):
                 if not (content_type.startswith('application/json') or content_type.startswith('text/json') or response.text.strip().startswith('{')):
                     logger.warning(f"Unexpected content type: {content_type}")
                     logger.warning(f"Response text: {response.text[:500]}...")
-                    return f"Error: API returned non-JSON response. Content-Type: {content_type}"
+                    return {"error": f"API returned non-JSON response. Content-Type: {content_type}"}
 
                 try:
                     data = response.json()
@@ -88,30 +95,34 @@ class SippyPayloadDetailsTool(SippyBaseTool):
                 except json.JSONDecodeError as json_err:
                     logger.error(f"JSON decode error: {json_err}")
                     logger.error(f"Response text: {response.text[:500]}...")
-                    return f"Error: Invalid JSON response from API. Response: {response.text[:200]}..."
+                    return {"error": f"Invalid JSON response from API. Response: {response.text[:200]}..."}
 
                 # Validate that data is a dictionary
                 if not isinstance(data, dict):
                     logger.error(f"Expected dict, got {type(data)}: {str(data)[:200]}...")
-                    return f"Error: API returned unexpected data type {type(data)}. Expected JSON object."
+                    return {"error": f"API returned unexpected data type {type(data)}. Expected JSON object."}
 
-                # Format the response
-                return self._format_payload_details(data, clean_payload_name, include_job_analysis, max_jobs_to_analyze)
+                # Remove the redundant base64 changelog
+                if "changeLog" in data:
+                    del data["changeLog"]
+
+                # Return the raw JSON data
+                return data
                 
         except httpx.HTTPStatusError as e:
             logger.error(f"HTTP error getting payload details: {e}")
             if e.response.status_code == 404:
-                return f"Error: Payload '{clean_payload_name}' not found in release stream '{release_stream}'. Check if the payload name is correct."
-            return f"Error: HTTP {e.response.status_code} - {e.response.text}"
+                return {"error": f"Payload '{clean_payload_name}' not found in release stream '{release_stream}'. Check if the payload name is correct."}
+            return {"error": f"HTTP {e.response.status_code} - {e.response.text}"}
         except httpx.RequestError as e:
             logger.error(f"Request error getting payload details: {e}")
-            return f"Error: Failed to connect to release controller API - {str(e)}"
+            return {"error": f"Failed to connect to release controller API - {str(e)}"}
         except json.JSONDecodeError as e:
             logger.error(f"JSON decode error: {e}")
-            return f"Error: Invalid JSON response from release controller API"
+            return {"error": "Invalid JSON response from release controller API"}
         except Exception as e:
             logger.error(f"Unexpected error getting payload details: {e}")
-            return f"Error: Unexpected error - {str(e)}"
+            return {"error": f"Unexpected error - {str(e)}"}
 
     def _clean_payload_name(self, payload_name: str) -> str:
         """Clean payload name from common parameter syntax issues."""

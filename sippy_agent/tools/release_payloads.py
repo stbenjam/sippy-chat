@@ -45,22 +45,28 @@ class SippyReleasePayloadTool(SippyBaseTool):
     
     def _run(
         self,
-        release_version: str,
-        stream_type: Optional[str] = "nightly",
-        include_ready: Optional[bool] = False,
-        limit: Optional[int] = 10
+        *args,
+        **kwargs: Any,
     ) -> str:
         """Get release payload information from the release controller API."""
 
+        input_data = {}
+        if args and isinstance(args[0], dict):
+            input_data.update(args[0])
+        input_data.update(kwargs)
+
+        # Pydantic model will have validated and filled in defaults
+        args = self.ReleasePayloadInput(**input_data)
+
         # Validate and clean inputs
-        stream_type = stream_type or "nightly"
+        stream_type = args.stream_type or "nightly"
         if stream_type not in ["nightly", "ci"]:
             return f"Error: Invalid stream type '{stream_type}'. Must be 'nightly' or 'ci'."
         
         # Clean release version (remove any extra characters)
-        clean_version = re.sub(r'[^\d\.]', '', release_version)
+        clean_version = re.sub(r'[^\d\.]', '', args.release_version)
         if not re.match(r'^\d+\.\d+$', clean_version):
-            return f"Error: Invalid release version format. Expected format like '4.20', got: {release_version}"
+            return f"Error: Invalid release version format. Expected format like '4.20', got: {args.release_version}"
         
         # Construct the release stream name
         release_stream = f"{clean_version}.0-0.{stream_type}"
@@ -82,8 +88,8 @@ class SippyReleasePayloadTool(SippyBaseTool):
                     data, 
                     release_version=clean_version,
                     stream_type=stream_type,
-                    include_ready=include_ready,
-                    limit=limit
+                    include_ready=args.include_ready,
+                    limit=args.limit
                 )
                 
         except httpx.HTTPStatusError as e:
