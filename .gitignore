@@ -138,3 +138,4 @@ dmypy.json
 # OS
 .DS_Store
 Thumbs.db
+mcp_config.json

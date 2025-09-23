@@ -4,6 +4,7 @@ Core Re-Act agent implementation for Sippy.
 
 import logging
 import re
+import asyncio
 from typing import List, Optional, Union, Dict, Any, Callable
 from langchain.agents import AgentExecutor, create_tool_calling_agent
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -25,10 +26,10 @@ from .tools import (
     SippyJiraTicketCreatorTool,
     SippyReleasePayloadTool,
     SippyPayloadDetailsTool,
-    SippyReleasesTool,
     JUnitParserTool,
     AggregatedJobAnalyzerTool,
-    AggregatedYAMLParserTool
+    AggregatedYAMLParserTool,
+    load_tools_from_mcp,
 )
 
 logger = logging.getLogger(__name__)
@@ -59,15 +60,6 @@ class StreamingThinkingHandler(BaseCallbackHandler):
                 return
             # Stream the observation
             self.thinking_callback("", "", "", output)
-
-    def _extract_thought_from_log(self, log: str) -> str:
-        """Extract the thought portion from the action log."""
-        if not log:
-            return "Processing..."
-
-        # This method is less relevant for tool-calling agents but kept for compatibility.
-        return "Analyzing..."
-
 
 class TokenCountingHandler(BaseCallbackHandler):
     """Callback handler to count tokens used in LLM calls."""
@@ -141,7 +133,7 @@ class SippyAgent:
         """Initialize the Sippy agent with configuration."""
         self.config = config
         self.llm = self._create_llm()
-        self.tools = self._create_tools()
+        self.tools = asyncio.run(self._create_tools())
         self.agent_executor = self._create_agent_executor()
         self.token_counter = TokenCountingHandler()
     
@@ -195,7 +187,7 @@ class SippyAgent:
 
             return ChatOpenAI(**llm_kwargs)
     
-    def _create_tools(self) -> List[BaseTool]:
+    async def _create_tools(self) -> List[BaseTool]:
         """Create the list of tools available to the agent."""
         tools = [
             ExampleTool(),
@@ -211,19 +203,26 @@ class SippyAgent:
             SippyJiraTicketCreatorTool(),
             SippyReleasePayloadTool(),
             SippyPayloadDetailsTool(),
-            SippyReleasesTool(sippy_api_url=self.config.sippy_api_url),
             JUnitParserTool(),
             AggregatedJobAnalyzerTool(sippy_api_url=self.config.sippy_api_url),
             AggregatedYAMLParserTool(),
         ]
         
+        # Load MCP tools if a config file is provided
+        if self.config.mcp_config_file:
+            logger.info(f"Loading MCP tools from {self.config.mcp_config_file}")
+            mcp_tools = await load_tools_from_mcp(self.config.mcp_config_file)
+            if mcp_tools:
+                tools.extend(mcp_tools)
+                logger.info(f"Successfully loaded {len(mcp_tools)} tools from MCP servers.")
+
         if self.config.verbose:
             logger.info(f"Created {len(tools)} tools: {[tool.name for tool in tools]}")
         
         return tools
     
     def _create_agent_executor(self) -> AgentExecutor:
-        """Create the Re-Act agent executor."""
+        """Create the agent executor."""
         # Custom prompt template for Sippy CI analysis
         prompt_template = """You are Sippy AI, an expert assistant for analyzing CI job and test failures.
 

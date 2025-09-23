@@ -38,8 +38,9 @@ def setup_logging(verbose: bool = False) -> None:
 @click.option('--max-iterations', default=None, type=int, help='Maximum number of agent iterations (default: 25)')
 @click.option('--timeout', default=None, type=int, help='Maximum execution time in seconds (default: 1800 = 30 minutes)')
 @click.option('--google-credentials', default=None, help='Path to Google service account credentials JSON file')
+@click.option("--mcp-config", help="Path to MCP servers config file")
 def main(host: str, port: int, reload: bool, verbose: bool, thinking: bool,
-         model: str, endpoint: str, temperature: float, max_iterations: int, timeout: int, google_credentials: str) -> None:
+         model: str, endpoint: str, temperature: float, max_iterations: int, timeout: int, google_credentials: str, mcp_config: str) -> None:
     """Sippy AI Agent Web Server - REST API for CI/CD Analysis."""
     setup_logging(verbose)
     
@@ -62,6 +63,8 @@ def main(host: str, port: int, reload: bool, verbose: bool, thinking: bool,
             config.max_execution_time = timeout
         if google_credentials is not None:
             config.google_credentials_file = google_credentials
+        if mcp_config:
+            config.mcp_config_file = mcp_config
 
         # Create and run web server
         console.print(f"[green]Starting Sippy AI Agent Web Server...[/green]")

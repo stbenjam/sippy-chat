@@ -61,6 +61,12 @@ class Config(BaseModel):
         default_factory=lambda: os.getenv("JIRA_TOKEN"),
         description="Jira API token for authentication (optional for public queries)"
     )
+
+    # MCP Configuration
+    mcp_config_file: Optional[str] = Field(
+        default_factory=lambda: os.getenv("MCP_CONFIG_FILE"),
+        description="Path to the MCP servers JSON configuration file"
+    )
     
     # Agent Configuration
     max_iterations: int = Field(

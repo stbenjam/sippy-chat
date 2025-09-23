@@ -367,34 +367,37 @@ class SippyCLI:
 @click.option('--max-iterations', default=None, type=int, help='Maximum number of agent iterations (default: 25)')
 @click.option('--timeout', default=None, type=int, help='Maximum execution time in seconds (default: 1800 = 30 minutes)')
 @click.option('--google-credentials', default=None, help='Path to Google service account credentials JSON file')
-def main(verbose: bool, thinking: bool, model: str, endpoint: str, temperature: float, max_iterations: int, timeout: int, google_credentials: str) -> None:
-    """Sippy AI Agent - Your CI/CD Analysis Assistant."""
+@click.option('--mcp-config', default=None, help='Path to MCP servers config file')
+def main(verbose: bool, thinking: bool, model: str, endpoint: str, temperature: float,
+         max_iterations: int, timeout: int, google_credentials: str, mcp_config: str) -> None:
+    """
+    Main entry point for the Sippy Agent CLI.
+    """
     setup_logging(verbose)
-    
+
+    # Create configuration
+    config = Config.from_env()
+    config.verbose = verbose
+    config.show_thinking = thinking
+    if model:
+        config.model_name = model
+    if endpoint:
+        config.llm_endpoint = endpoint
+    if temperature:
+        config.temperature = temperature
+    if max_iterations:
+        config.max_iterations = max_iterations
+    if timeout:
+        config.max_execution_time = timeout
+    if google_credentials:
+        config.google_credentials_file = google_credentials
+    if mcp_config:
+        config.mcp_config_file = mcp_config
+
     try:
-        # Create configuration
-        config = Config.from_env()
-        config.verbose = verbose
-        config.show_thinking = thinking
-
-        # Only override .env values if explicitly provided via CLI
-        if model is not None:
-            config.model_name = model
-        if endpoint is not None:
-            config.llm_endpoint = endpoint
-        if temperature is not None:
-            config.temperature = temperature
-        if max_iterations is not None:
-            config.max_iterations = max_iterations
-        if timeout is not None:
-            config.max_execution_time = timeout
-        if google_credentials is not None:
-            config.google_credentials_file = google_credentials
-
-        # Create and run CLI
+        config.validate_required_settings()
         cli = SippyCLI(config)
         cli.run()
-        
     except ValueError as e:
         console.print(f"[red]Configuration error: {e}[/red]")
         sys.exit(1)
