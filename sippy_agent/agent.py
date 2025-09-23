@@ -12,7 +12,7 @@ from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.tools import BaseTool
 from langchain.callbacks.base import BaseCallbackHandler
-from langchain.schema import AgentAction, AgentFinish, LLMResult, AIMessage, HumanMessage
+from langchain.schema import AgentAction, LLMResult, AIMessage, HumanMessage
 
 from .config import Config
 from .api_models import ChatMessage
@@ -52,11 +52,24 @@ class StreamingThinkingHandler(BaseCallbackHandler):
     def on_tool_end(self, output: str, **kwargs) -> None:
         """Called when a tool finishes."""
         if self.thinking_callback:
-            # Skip error outputs
-            if "Invalid" in output or "Error" in output or "_Exception" in output:
+            # Convert output to string if it's not already a string
+            try:
+                if isinstance(output, str):
+                    output_str = output
+                else:
+                    # Convert non-string outputs (like dicts) to string
+                    output_str = str(output)
+                
+                # Skip error outputs
+                if "Invalid" in output_str or "Error" in output_str or "_Exception" in output_str:
+                    return
+                    
+                # Stream the observation
+                self.thinking_callback("", "", "", output_str)
+            except Exception as e:
+                # If there's any error in processing, log it and skip this callback
+                logger.warning(f"Error processing tool output in callback: {e}")
                 return
-            # Stream the observation
-            self.thinking_callback("", "", "", output)
 
 class TokenCountingHandler(BaseCallbackHandler):
     """Callback handler to count tokens used in LLM calls."""
@@ -251,10 +264,12 @@ CRITICAL RULES:
 - If you do not know the answer or the tools do not provide it, simply say that you do not have that information.
 
 PAYLOAD ANALYSIS WORKFLOW:
-When a user asks about the 'latest' payload (e.g., "What is the latest 4.20 payload?"), you MUST follow this sequence:
+When a user asks about a payload, you MUST follow this sequence:
+1. If they ask for the 'latest' payload, use your tools to find the latest release version that has not GA'd.
 1. Call `get_release_payloads` with the appropriate `release_version`.
-2. From the JSON response, identify the most recent payload (usually the first in the list).
+2. From the JSON response, identify the most recent payload that is not 'Ready'.
 3. State the name and phase of that payload to the user.
+4. Do not report on the payload if it is 'Ready', unless the user specifically asks for it.
 
 If the user then asks 'why' it was rejected, you MUST then:
 1. Call `get_payload_details` with the payload name you just identified.

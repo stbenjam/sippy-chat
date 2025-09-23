@@ -8,9 +8,8 @@ import logging
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 import uvicorn
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 
 from .agent import SippyAgent
 from .config import Config
