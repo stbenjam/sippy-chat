@@ -5,6 +5,7 @@ Command-line interface for Sippy Agent.
 import logging
 import sys
 from typing import Optional, List, Dict
+import asyncio
 import click
 from rich.console import Console
 from rich.panel import Panel
@@ -13,6 +14,7 @@ from rich.text import Text
 from rich.logging import RichHandler
 
 from .agent import SippyAgent
+from .api_models import ChatMessage
 from .config import Config
 
 console = Console()
@@ -223,7 +225,7 @@ class SippyCLI:
                     padding=(0, 1)
                 ))
 
-    def process_user_input(self, user_input: str) -> bool:
+    async def process_user_input(self, user_input: str) -> bool:
         """Process user input and return False if should exit."""
         user_input = user_input.strip()
         
@@ -255,10 +257,10 @@ class SippyCLI:
             self.streaming_steps = []
 
             # Prepare chat history for context
-            history_context = "\n".join([
-                f"User: {user_msg}\nAssistant: {agent_msg}"
-                for user_msg, agent_msg in self.chat_history[-3:]  # Last 3 exchanges
-            ])
+            history_messages: List[ChatMessage] = []
+            for user_msg, agent_msg in self.chat_history[-3:]:  # Last 3 exchanges
+                history_messages.append(ChatMessage(role="user", content=user_msg))
+                history_messages.append(ChatMessage(role="assistant", content=agent_msg))
 
             if self.config.show_thinking:
                 # Show thinking header
@@ -266,10 +268,10 @@ class SippyCLI:
                 console.print(Panel("🧠 Agent's Thinking Process", title="Reasoning", border_style="cyan"))
 
                 # Use streaming callback
-                response = self.agent.chat(user_input, history_context, self.streaming_thinking_callback)
+                response = await self.agent.achat(user_input, history_messages, self.streaming_thinking_callback)
             else:
                 with console.status("[bold green]Thinking...", spinner="dots"):
-                    response = self.agent.chat(user_input, history_context)
+                    response = await self.agent.achat(user_input, history_messages)
 
             # Display response
             console.print()
@@ -343,19 +345,22 @@ class SippyCLI:
 
     def run(self) -> None:
         """Run the interactive CLI."""
-        self.display_welcome()
-        
-        try:
-            while True:
-                user_input = Prompt.ask("[bold blue]You")
-                
-                if not self.process_user_input(user_input):
-                    break
+        async def run_async():
+            self.display_welcome()
+            
+            try:
+                while True:
+                    user_input = await asyncio.to_thread(Prompt.ask, "[bold blue]You")
                     
-        except KeyboardInterrupt:
-            console.print("\n[yellow]Goodbye![/yellow]")
-        except EOFError:
-            console.print("\n[yellow]Goodbye![/yellow]")
+                    if not await self.process_user_input(user_input):
+                        break
+                        
+            except KeyboardInterrupt:
+                console.print("\n[yellow]Goodbye![/yellow]")
+            except EOFError:
+                console.print("\n[yellow]Goodbye![/yellow]")
+        
+        asyncio.run(run_async())
 
 
 @click.command()

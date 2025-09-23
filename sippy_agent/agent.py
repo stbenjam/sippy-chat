@@ -17,9 +17,6 @@ from langchain.schema import AgentAction, AgentFinish, LLMResult, AIMessage, Hum
 from .config import Config
 from .api_models import ChatMessage
 from .tools import (
-    ExampleTool,
-    SippyJobAnalysisTool,
-    SippyTestFailureTool,
     SippyProwJobSummaryTool,
     SippyLogAnalyzerTool,
     SippyJiraIncidentTool,
@@ -190,9 +187,6 @@ class SippyAgent:
     async def _create_tools(self) -> List[BaseTool]:
         """Create the list of tools available to the agent."""
         tools = [
-            ExampleTool(),
-            SippyJobAnalysisTool(),
-            SippyTestFailureTool(),
             SippyProwJobSummaryTool(sippy_api_url=self.config.sippy_api_url),
             SippyLogAnalyzerTool(sippy_api_url=self.config.sippy_api_url),
             SippyJiraIncidentTool(
@@ -292,8 +286,8 @@ If the user then asks 'why' it was rejected, you MUST then:
             return_intermediate_steps=True,  # Enable intermediate steps for thinking display
         )
     
-    def chat(self, message: str, chat_history: Optional[List[ChatMessage]] = None,
-             thinking_callback: Optional[Callable[[str, str, str, str], None]] = None) -> Union[str, Dict[str, Any]]:
+    async def achat(self, message: str, chat_history: Optional[List[ChatMessage]] = None,
+                   thinking_callback: Optional[Callable[[str, str, str, str], None]] = None) -> Union[str, Dict[str, Any]]:
         """Process a chat message and return the agent's response.
 
         Args:
@@ -319,7 +313,7 @@ If the user then asks 'why' it was rejected, you MUST then:
                     elif msg.role == "assistant":
                         history_messages.append(AIMessage(content=msg.content))
 
-            result = self.agent_executor.invoke({
+            result = await self.agent_executor.ainvoke({
                 "input": message,
                 "chat_history": history_messages
             }, config={"callbacks": callbacks})

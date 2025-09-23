@@ -88,19 +88,3 @@ class SippyBaseTool(BaseTool, ABC):
     async def _arun(self, **kwargs: Any) -> str:
         """Async version of _run. Default implementation calls _run."""
         return self._run(**kwargs)
-
-
-class ExampleTool(SippyBaseTool):
-    """Example tool to demonstrate the structure."""
-    
-    name: str = "example_tool"
-    description: str = "An example tool that echoes back the input"
-    
-    class ExampleInput(SippyToolInput):
-        message: str = Field(description="Message to echo back")
-    
-    args_schema: Type[BaseModel] = ExampleInput
-    
-    def _run(self, message: str) -> str:
-        """Echo back the input message."""
-        return f"Echo: {message}"
