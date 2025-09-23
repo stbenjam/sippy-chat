@@ -1,12 +1,12 @@
 """
-Tool for parsing aggregated test results in YAML format.
+Tool for parsing aggregated test results from YAML URLs.
 """
 
+import yaml
 import logging
-from typing import Any, Dict, Optional, Type, List
+from typing import Any, Dict, Type
 from pydantic import Field
 import httpx
-import yaml
 
 from .base_tool import SippyBaseTool, SippyToolInput
 
@@ -14,134 +14,50 @@ logger = logging.getLogger(__name__)
 
 
 class AggregatedYAMLParserTool(SippyBaseTool):
-    """Tool for parsing aggregated test results from YAML format."""
-    
-    name: str = "parse_aggregated_yaml"
-    description: str = "Parse aggregated test results from a YAML URL to get a JSON object with the test results. Only use for aggregated jobs."
-    
-    class AggregatedYAMLInput(SippyToolInput):
-        yaml_url: str = Field(description="URL to the aggregated YAML file")
-    
-    args_schema: Type[SippyToolInput] = AggregatedYAMLInput
-    
-    def _run(self, *args, **kwargs: Any) -> Dict[str, Any]:
-        """Parse aggregated YAML file and extract test results with underlying job links."""
-        
-        input_data = {}
-        if args and isinstance(args[0], dict):
-            input_data.update(args[0])
-        input_data.update(kwargs)
+    """Tool for parsing aggregated test results from YAML URLs."""
 
-        try:
-            params = self.AggregatedYAMLInput(**input_data)
-        except Exception as e:
-            return {"error": f"Invalid input parameters: {e}"}
+    name: str = "parse_aggregated_yaml"
+    description: str = "Parse aggregated test results from a YAML URL to analyze job runs and failure patterns"
+
+    class AggregatedYAMLInput(SippyToolInput):
+        yaml_url: str = Field(description="URL to the aggregated YAML file (e.g., from job artifacts)")
+
+    args_schema: Type[SippyToolInput] = AggregatedYAMLInput
+
+    def _run(self, yaml_url: str) -> Dict[str, Any]:
+        """Parse aggregated YAML and return structured data."""
+        if not yaml_url or not yaml_url.startswith(('http://', 'https://')):
+            return {"error": "Invalid URL provided. Please provide a valid HTTP/HTTPS URL to a YAML file."}
 
         try:
             # Fetch the YAML content
-            logger.info(f"Fetching aggregated YAML from: {params.yaml_url}")
-            
-            with httpx.Client(timeout=60.0) as client:
-                response = client.get(params.yaml_url)
+            with httpx.Client(timeout=30.0) as client:
+                response = client.get(yaml_url)
                 response.raise_for_status()
                 
-                yaml_content = response.text
+                # Parse YAML content
+                try:
+                    data = yaml.safe_load(response.text)
+                except yaml.YAMLError as e:
+                    logger.error(f"YAML parsing error: {e}")
+                    return {"error": f"Invalid YAML format - {str(e)}"}
                 
-            # Parse the YAML
-            try:
-                data = yaml.safe_load(yaml_content)
+                # Validate that we got a dictionary
                 if not isinstance(data, dict):
                     return {"error": "Expected YAML data to be a dictionary"}
+                
+                # Return the raw data for LLM processing
                 return data
-            except yaml.YAMLError as e:
-                logger.error(f"YAML parse error: {e}")
-                return {"error": f"Invalid YAML format - {str(e)}"}
                 
         except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error fetching aggregated YAML: {e}")
-            return {"error": f"HTTP {e.response.status_code} - Failed to fetch YAML from {params.yaml_url}"}
+            logger.error(f"HTTP error fetching YAML: {e}")
+            if e.response.status_code == 404:
+                return {"error": f"YAML file not found at {yaml_url}. The URL may be incorrect or the file may have been moved."}
+            else:
+                return {"error": f"HTTP {e.response.status_code} - {e.response.text}"}
         except httpx.RequestError as e:
-            logger.error(f"Request error fetching aggregated YAML: {e}")
-            return {"error": f"Failed to connect to {params.yaml_url} - {str(e)}"}
+            logger.error(f"Request error fetching YAML: {e}")
+            return {"error": f"Failed to connect to {yaml_url} - {str(e)}"}
         except Exception as e:
             logger.error(f"Unexpected error parsing aggregated YAML: {e}")
             return {"error": f"Unexpected error - {str(e)}"}
-    
-    def _format_aggregated_results(self, data: Any) -> str:
-        """Format aggregated test results for display."""
-        if not isinstance(data, dict):
-            return "Error: Expected YAML data to be a dictionary"
-        
-        result = "**🔄 Aggregated Test Results**\n\n"
-        
-        # Extract basic information
-        testsuitename = data.get('testsuitename', 'Unknown')
-        summary = data.get('summary', 'No summary available')
-        
-        result += f"**Test Suite:** {testsuitename}\n"
-        result += f"**Summary:** {summary}\n\n"
-        
-        # Process passes
-        passes = data.get('passes', [])
-        failures = data.get('failures', [])
-        skips = data.get('skips', [])
-        
-        if passes:
-            result += f"**✅ Passing Jobs ({len(passes)} total):**\n"
-            for i, job in enumerate(passes[:5], 1):  # Show first 5
-                job_id = job.get('jobrunid', 'Unknown')
-                human_url = job.get('humanurl', 'No URL')
-                result += f"{i}. Job ID {job_id}: {human_url}\n"
-            
-            if len(passes) > 5:
-                result += f"... and {len(passes) - 5} more passing jobs\n"
-            result += "\n"
-        
-        if failures:
-            result += f"**❌ Failing Jobs ({len(failures)} total):**\n"
-            for i, job in enumerate(failures, 1):
-                job_id = job.get('jobrunid', 'Unknown')
-                human_url = job.get('humanurl', 'No URL')
-                gcs_url = job.get('gcsartifacturl', 'No artifacts URL')
-                result += f"{i}. **Job ID {job_id}**\n"
-                result += f"   🔗 Job URL: {human_url}\n"
-                result += f"   📁 Artifacts: {gcs_url}\n\n"
-            
-            result += "💡 **For deep analysis:** Use the job summary tool on individual failing job IDs above to analyze specific failures.\n\n"
-        
-        if skips:
-            result += f"**⏭️ Skipped Jobs ({len(skips)} total):**\n"
-            for i, job in enumerate(skips[:3], 1):  # Show first 3
-                job_id = job.get('jobrunid', 'Unknown')
-                human_url = job.get('humanurl', 'No URL')
-                result += f"{i}. Job ID {job_id}: {human_url}\n"
-            
-            if len(skips) > 3:
-                result += f"... and {len(skips) - 3} more skipped jobs\n"
-            result += "\n"
-        
-        # Add analysis summary
-        total_jobs = len(passes) + len(failures) + len(skips)
-        if total_jobs > 0:
-            pass_rate = (len(passes) / total_jobs) * 100
-            result += f"**📊 Analysis Summary:**\n"
-            result += f"- Total jobs: {total_jobs}\n"
-            result += f"- Pass rate: {pass_rate:.1f}% ({len(passes)}/{total_jobs})\n"
-            result += f"- Failures: {len(failures)}\n"
-            result += f"- Skips: {len(skips)}\n\n"
-        
-        # Extract historical context from summary if available
-        if 'historical pass rate' in summary.lower():
-            result += "**📈 Historical Context:**\n"
-            result += f"The summary indicates historical performance data is available.\n"
-            result += f"Compare current results with historical trends for context.\n\n"
-        
-        # Add guidance for next steps
-        if failures:
-            result += "**🔍 Recommended Next Steps:**\n"
-            result += "1. Analyze failing jobs using the job summary tool\n"
-            result += "2. Look for common failure patterns across failed jobs\n"
-            result += "3. Check for known incidents that might correlate with failures\n"
-            result += "4. Compare failure reasons to understand if they're related\n"
-        
-        return result

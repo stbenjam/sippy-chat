@@ -2,34 +2,29 @@
 Tools package for Sippy Agent.
 """
 
-from .base_tool import SippyBaseTool, SippyToolInput, ExampleTool
-from .sippy_job_summary import SippyProwJobSummaryTool
-from .sippy_log_analyzer import SippyLogAnalyzerTool
-from .jira_incidents import SippyJiraIncidentTool
-from .jira_creator import SippyJiraTicketCreatorTool
-from .release_payloads import SippyReleasePayloadTool
-from .payload_details import SippyPayloadDetailsTool
-from .junit_parser import JUnitParserTool
 from .aggregated_job_analyzer import AggregatedJobAnalyzerTool
 from .aggregated_yaml_parser import AggregatedYAMLParserTool
+from .base_tool import SippyBaseTool, SippyToolInput
+from .jira_creator import SippyJiraTicketCreatorTool
+from .jira_incidents import SippyJiraIncidentTool
+from .junit_parser import JUnitParserTool
 from .mcp_tool_loader import load_tools_from_mcp
-from .placeholder_tools import SippyJobAnalysisTool, SippyTestFailureTool
-
+from .payload_details import SippyPayloadDetailsTool
+from .release_payloads import SippyReleasePayloadTool
+from .sippy_job_summary import SippyProwJobSummaryTool
+from .sippy_log_analyzer import SippyLogAnalyzerTool
 
 __all__ = [
-    "SippyToolInput",
-    "SippyBaseTool",
-    "ExampleTool",
-    "SippyProwJobSummaryTool",
-    "SippyLogAnalyzerTool",
-    "SippyJiraIncidentTool",
-    "SippyJiraTicketCreatorTool",
-    "SippyReleasePayloadTool",
-    "SippyPayloadDetailsTool",
-    "JUnitParserTool",
     "AggregatedJobAnalyzerTool",
     "AggregatedYAMLParserTool",
+    "SippyBaseTool",
+    "SippyToolInput",
+    "SippyJiraTicketCreatorTool",
+    "SippyJiraIncidentTool",
+    "JUnitParserTool",
     "load_tools_from_mcp",
-    "SippyJobAnalysisTool",
-    "SippyTestFailureTool"
+    "SippyPayloadDetailsTool",
+    "SippyReleasePayloadTool",
+    "SippyProwJobSummaryTool",
+    "SippyLogAnalyzerTool",
 ]

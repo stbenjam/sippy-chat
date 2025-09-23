@@ -9,7 +9,6 @@ from pydantic import Field
 import httpx
 
 from .base_tool import SippyBaseTool, SippyToolInput
-from .log_analysis_helpers import format_log_analysis
 
 logger = logging.getLogger(__name__)
 
