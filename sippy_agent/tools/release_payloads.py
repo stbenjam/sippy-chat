@@ -18,7 +18,7 @@ class SippyReleasePayloadTool(SippyBaseTool):
     """Tool for getting OpenShift release payload information."""
     
     name: str = "get_release_payloads"
-    description: str = "Get generic OpenShift release payload information for a release version and stream. Returns list of recent payloads with basic status. When asked for 'latest' or 'last' payload, returns the most recent payload's name and status. For specific payload details, use get_payload_details tool. Input: release version (e.g., '4.20') and optional stream type ('nightly' or 'ci', defaults to 'nightly')"
+    description: str = "Get a JSON object containing a list of recent OpenShift release payloads with their status. Use this to find the name of the latest payload. For specific payload details, use get_payload_details. Input: release version (e.g., '4.20') and optional stream type ('nightly' or 'ci', defaults to 'nightly')"
     
     # Release controller API base URL
     release_controller_url: str = Field(
@@ -47,7 +47,7 @@ class SippyReleasePayloadTool(SippyBaseTool):
         self,
         *args,
         **kwargs: Any,
-    ) -> str:
+    ) -> Dict[str, Any]:
         """Get release payload information from the release controller API."""
 
         input_data = {}
@@ -61,12 +61,12 @@ class SippyReleasePayloadTool(SippyBaseTool):
         # Validate and clean inputs
         stream_type = args.stream_type or "nightly"
         if stream_type not in ["nightly", "ci"]:
-            return f"Error: Invalid stream type '{stream_type}'. Must be 'nightly' or 'ci'."
+            return {"error": f"Invalid stream type '{stream_type}'. Must be 'nightly' or 'ci'."}
         
         # Clean release version (remove any extra characters)
         clean_version = re.sub(r'[^\d\.]', '', args.release_version)
         if not re.match(r'^\d+\.\d+$', clean_version):
-            return f"Error: Invalid release version format. Expected format like '4.20', got: {args.release_version}"
+            return {"error": f"Invalid release version format. Expected format like '4.20', got: {args.release_version}"}
         
         # Construct the release stream name
         release_stream = f"{clean_version}.0-0.{stream_type}"
@@ -83,29 +83,23 @@ class SippyReleasePayloadTool(SippyBaseTool):
                 
                 data = response.json()
                 
-                # Format the response
-                return self._format_payload_response(
-                    data, 
-                    release_version=clean_version,
-                    stream_type=stream_type,
-                    include_ready=args.include_ready,
-                    limit=args.limit
-                )
+                # Return the raw JSON data
+                return data
                 
         except httpx.HTTPStatusError as e:
             logger.error(f"HTTP error getting release payloads: {e}")
             if e.response.status_code == 404:
-                return f"Error: Release stream '{release_stream}' not found. Check if the release version and stream type are correct."
-            return f"Error: HTTP {e.response.status_code} - {e.response.text}"
+                return {"error": f"Release stream '{release_stream}' not found. Check if the release version and stream type are correct."}
+            return {"error": f"HTTP {e.response.status_code} - {e.response.text}"}
         except httpx.RequestError as e:
             logger.error(f"Request error getting release payloads: {e}")
-            return f"Error: Failed to connect to release controller API - {str(e)}"
+            return {"error": f"Failed to connect to release controller API - {str(e)}"}
         except json.JSONDecodeError as e:
             logger.error(f"JSON decode error: {e}")
-            return f"Error: Invalid JSON response from release controller API"
+            return {"error": "Invalid JSON response from release controller API"}
         except Exception as e:
             logger.error(f"Unexpected error getting release payloads: {e}")
-            return f"Error: Unexpected error - {str(e)}"
+            return {"error": f"Unexpected error - {str(e)}"}
 
     def _format_payload_response(
         self, 

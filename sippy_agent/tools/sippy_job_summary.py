@@ -18,7 +18,7 @@ class SippyProwJobSummaryTool(SippyBaseTool):
     """Tool for getting prow job run summaries from Sippy API."""
     
     name: str = "get_prow_job_summary"
-    description: str = "Get a summary of a prow job run including URL, TestGrid URL, timing, results, and test failures. Contains all basic job information. Input: just the numeric job ID (e.g., 1934795512955801600)"
+    description: str = "Get a JSON object with a summary of a Prow job run including its URL, TestGrid link, and test failures. Contains all basic job information. Input: just the numeric job ID (e.g., 1934795512955801600)"
     
     # Add sippy_api_url as a proper field
     sippy_api_url: Optional[str] = Field(default=None, description="Sippy API base URL")
@@ -29,7 +29,7 @@ class SippyProwJobSummaryTool(SippyBaseTool):
     
     args_schema: Type[SippyToolInput] = ProwJobSummaryInput
     
-    def _run(self, *args, **kwargs: Any) -> str:
+    def _run(self, *args, **kwargs: Any) -> Dict[str, Any]:
         """Get prow job run summary from Sippy API."""
         
         input_data = {}
@@ -44,7 +44,7 @@ class SippyProwJobSummaryTool(SippyBaseTool):
         api_url = args.sippy_api_url or self.sippy_api_url
         
         if not api_url:
-            return "Error: No Sippy API URL configured. Please set SIPPY_API_URL environment variable or provide sippy_api_url parameter."
+            return {"error": "No Sippy API URL configured. Please set SIPPY_API_URL environment variable or provide sippy_api_url parameter."}
         
         # Clean and validate the job ID - extract just the numeric part
         clean_job_id = str(args.prow_job_run_id).strip()
@@ -54,7 +54,7 @@ class SippyProwJobSummaryTool(SippyBaseTool):
         if job_id_match:
             clean_job_id = job_id_match.group(1)
         elif not clean_job_id.isdigit():
-            return f"Error: Invalid job ID format. Expected numeric ID, got: {args.prow_job_run_id}"
+            return {"error": f"Invalid job ID format. Expected numeric ID, got: {args.prow_job_run_id}"}
         
         # Construct the API endpoint
         endpoint = f"{api_url.rstrip('/')}/api/job/run/summary"
@@ -70,21 +70,21 @@ class SippyProwJobSummaryTool(SippyBaseTool):
                 
                 data = response.json()
                 
-                # Format the response for better readability
-                return self._format_job_summary(data)
+                # Return the raw JSON data
+                return data
                 
         except httpx.HTTPStatusError as e:
             logger.error(f"HTTP error getting job summary: {e}")
-            return f"Error: HTTP {e.response.status_code} - {e.response.text}"
+            return {"error": f"HTTP {e.response.status_code} - {e.response.text}"}
         except httpx.RequestError as e:
             logger.error(f"Request error getting job summary: {e}")
-            return f"Error: Failed to connect to Sippy API at {api_url} - {str(e)}"
+            return {"error": f"Failed to connect to Sippy API at {api_url} - {str(e)}"}
         except json.JSONDecodeError as e:
             logger.error(f"JSON decode error: {e}")
-            return f"Error: Invalid JSON response from Sippy API"
+            return {"error": "Invalid JSON response from Sippy API"}
         except Exception as e:
             logger.error(f"Unexpected error getting job summary: {e}")
-            return f"Error: Unexpected error - {str(e)}"
+            return {"error": f"Unexpected error - {str(e)}"}
 
     def _format_job_summary(self, data: Dict[str, Any]) -> str:
         """Format the job summary data for display."""

@@ -17,21 +17,32 @@ class AggregatedYAMLParserTool(SippyBaseTool):
     """Tool for parsing aggregated test results from YAML format."""
     
     name: str = "parse_aggregated_yaml"
-    description: str = "Parse aggregated test results from YAML format. Takes yaml_url as required parameter. Only use for aggregated jobs."
+    description: str = "Parse aggregated test results from a YAML URL to get a JSON object with the test results. Only use for aggregated jobs."
     
     class AggregatedYAMLInput(SippyToolInput):
         yaml_url: str = Field(description="URL to the aggregated YAML file")
     
     args_schema: Type[SippyToolInput] = AggregatedYAMLInput
     
-    def _run(self, yaml_url: str) -> str:
+    def _run(self, *args, **kwargs: Any) -> Dict[str, Any]:
         """Parse aggregated YAML file and extract test results with underlying job links."""
+        
+        input_data = {}
+        if args and isinstance(args[0], dict):
+            input_data.update(args[0])
+        input_data.update(kwargs)
+
+        try:
+            params = self.AggregatedYAMLInput(**input_data)
+        except Exception as e:
+            return {"error": f"Invalid input parameters: {e}"}
+
         try:
             # Fetch the YAML content
-            logger.info(f"Fetching aggregated YAML from: {yaml_url}")
+            logger.info(f"Fetching aggregated YAML from: {params.yaml_url}")
             
             with httpx.Client(timeout=60.0) as client:
-                response = client.get(yaml_url)
+                response = client.get(params.yaml_url)
                 response.raise_for_status()
                 
                 yaml_content = response.text
@@ -39,22 +50,22 @@ class AggregatedYAMLParserTool(SippyBaseTool):
             # Parse the YAML
             try:
                 data = yaml.safe_load(yaml_content)
+                if not isinstance(data, dict):
+                    return {"error": "Expected YAML data to be a dictionary"}
+                return data
             except yaml.YAMLError as e:
                 logger.error(f"YAML parse error: {e}")
-                return f"Error: Invalid YAML format - {str(e)}"
-            
-            # Extract and format the results
-            return self._format_aggregated_results(data)
+                return {"error": f"Invalid YAML format - {str(e)}"}
                 
         except httpx.HTTPStatusError as e:
             logger.error(f"HTTP error fetching aggregated YAML: {e}")
-            return f"Error: HTTP {e.response.status_code} - Failed to fetch YAML from {yaml_url}"
+            return {"error": f"HTTP {e.response.status_code} - Failed to fetch YAML from {params.yaml_url}"}
         except httpx.RequestError as e:
             logger.error(f"Request error fetching aggregated YAML: {e}")
-            return f"Error: Failed to connect to {yaml_url} - {str(e)}"
+            return {"error": f"Failed to connect to {params.yaml_url} - {str(e)}"}
         except Exception as e:
             logger.error(f"Unexpected error parsing aggregated YAML: {e}")
-            return f"Error: Unexpected error - {str(e)}"
+            return {"error": f"Unexpected error - {str(e)}"}
     
     def _format_aggregated_results(self, data: Any) -> str:
         """Format aggregated test results for display."""

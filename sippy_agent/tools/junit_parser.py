@@ -18,34 +18,32 @@ class JUnitParserTool(SippyBaseTool):
     """Tool for parsing JUnit XML files to extract test failures and flakes."""
     
     name: str = "parse_junit_xml"
-    description: str = "Parse JUnit XML file from URL to get test failures and flakes. Takes junit_xml_url as required parameter and optional test_name parameter."
+    description: str = "Parse a JUnit XML file from a URL to get a JSON object with test failures, flakes, and aggregated results. Takes junit_xml_url as a required parameter."
     
     class JUnitParserInput(SippyToolInput):
         junit_xml_url: str = Field(description="URL to the JUnit XML file")
-        test_name: Optional[str] = Field(default=None, description="Optional specific test name to get results for")
     
     args_schema: Type[SippyToolInput] = JUnitParserInput
     
-    def _run(self, junit_xml_url: str, test_name: Optional[str] = None) -> str:
+    def _run(self, *args, **kwargs: Any) -> Dict[str, Any]:
         """Parse JUnit XML file and extract test failures and flakes."""
-        try:
-            # Handle case where agent passes JSON string instead of parsed parameters
-            if junit_xml_url.startswith('{') and junit_xml_url.endswith('}'):
-                try:
-                    import json
-                    parsed = json.loads(junit_xml_url)
-                    if 'junit_xml_url' in parsed:
-                        junit_xml_url = parsed['junit_xml_url']
-                        if 'test_name' in parsed:
-                            test_name = parsed['test_name']
-                except json.JSONDecodeError:
-                    return f"Error: Received malformed JSON input: {junit_xml_url}"
+        
+        input_data = {}
+        if args and isinstance(args[0], dict):
+            input_data.update(args[0])
+        input_data.update(kwargs)
 
+        try:
+            params = self.JUnitParserInput(**input_data)
+        except Exception as e:
+            return {"error": f"Invalid input parameters: {e}"}
+
+        try:
             # Fetch the XML content
-            logger.info(f"Fetching JUnit XML from: {junit_xml_url}")
+            logger.info(f"Fetching JUnit XML from: {params.junit_xml_url}")
             
             with httpx.Client(timeout=60.0) as client:
-                response = client.get(junit_xml_url)
+                response = client.get(params.junit_xml_url)
                 response.raise_for_status()
                 
                 xml_content = response.text
@@ -55,49 +53,47 @@ class JUnitParserTool(SippyBaseTool):
                 root = ET.fromstring(xml_content)
             except ET.ParseError as e:
                 logger.error(f"XML parse error: {e}")
-                return f"Error: Invalid XML format - {str(e)}"
+                return {"error": f"Invalid XML format - {str(e)}"}
             
-            # Check if this is an aggregated JUnit file first
+            # Initialize the result object
+            result: Dict[str, Any] = {
+                "source_url": params.junit_xml_url,
+                "summary": {},
+                "results": [],
+            }
+
+            # Check for aggregated results first
             aggregated_results = self._extract_aggregated_yaml_from_xml(root)
             if aggregated_results:
-                return self._format_aggregated_results(aggregated_results)
+                result["summary"]["type"] = "aggregated"
+                result["summary"]["failed_test_count"] = len(aggregated_results)
+                result["results"] = aggregated_results
+                return result
 
             # Extract regular test results
             test_results = self._extract_test_results(root)
-
-            # Check for underlying job links in regular JUnit
             underlying_jobs = self._extract_underlying_job_links(xml_content)
+            failures_and_flakes = self._identify_failures_and_flakes(test_results)
             
-            # Process results based on requirements
-            if test_name:
-                # Return all results for the specific test (no overall size limit for specific tests)
-                filtered_results = [result for result in test_results if result['name'] == test_name]
-                if not filtered_results:
-                    return f"No test results found for test name: {test_name}"
-                return self._format_test_results(filtered_results, test_name, underlying_jobs)
-            else:
-                # Return only failures and flakes, limit to 25 but respect 150KB overall limit
-                failures_and_flakes = self._identify_failures_and_flakes(test_results)
+            result["summary"]["type"] = "standard"
+            result["summary"]["total_tests"] = len(test_results)
+            result["summary"]["failure_and_flake_count"] = len(failures_and_flakes)
+            result["summary"]["underlying_job_count"] = len(underlying_jobs)
+            result["results"] = failures_and_flakes
+            if underlying_jobs:
+                result["underlying_jobs"] = underlying_jobs
 
-                # Format results while respecting the 150KB overall limit
-                result_text, actual_count, total_count = self._format_test_results_with_limit(failures_and_flakes, underlying_jobs, max_size_kb=150)
-
-                if actual_count < total_count:
-                    result_text += f"\n\n**Note:** Results truncated to {actual_count} entries due to size limit. Total failures/flakes found: {total_count}"
-                elif len(failures_and_flakes) > 25:
-                    result_text += f"\n\n**Note:** Results truncated to first 25 entries. Total failures/flakes found: {len(failures_and_flakes)}"
-
-                return result_text
+            return result
                 
         except httpx.HTTPStatusError as e:
             logger.error(f"HTTP error fetching JUnit XML: {e}")
-            return f"Error: HTTP {e.response.status_code} - Failed to fetch XML from {junit_xml_url}"
+            return {"error": f"HTTP {e.response.status_code} - Failed to fetch XML from {params.junit_xml_url}"}
         except httpx.RequestError as e:
             logger.error(f"Request error fetching JUnit XML: {e}")
-            return f"Error: Failed to connect to {junit_xml_url} - {str(e)}"
+            return {"error": f"Failed to connect to {params.junit_xml_url} - {str(e)}"}
         except Exception as e:
             logger.error(f"Unexpected error parsing JUnit XML: {e}")
-            return f"Error: Unexpected error - {str(e)}"
+            return {"error": f"Unexpected error - {str(e)}"}
     
     def _extract_test_results(self, root: ET.Element) -> List[Dict[str, Any]]:
         """Extract all test results from the JUnit XML."""

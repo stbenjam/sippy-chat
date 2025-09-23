@@ -17,7 +17,7 @@ class SippyJiraIncidentTool(SippyBaseTool):
     """Tool for querying Jira for known open incidents in the TRT project."""
     
     name: str = "check_known_incidents"
-    description: str = "Check Jira for all known open TRT incidents."
+    description: str = "Get a JSON object with a list of all known open TRT incidents from Jira."
     
     # Add Jira configuration as proper fields
     jira_url: str = Field(default="https://issues.redhat.com", description="Jira instance URL")
@@ -29,13 +29,13 @@ class SippyJiraIncidentTool(SippyBaseTool):
     
     args_schema: Type[SippyToolInput] = JiraIncidentInput
     
-    def _run(self, jira_url: Optional[str] = None) -> str:
+    def _run(self, jira_url: Optional[str] = None) -> Dict[str, Any]:
         """Query Jira for known open incidents."""
         # Use provided URL or fall back to instance URL
         api_url = jira_url or self.jira_url
         
         if not api_url:
-            return "Error: No Jira URL configured. Please set JIRA_URL environment variable or provide jira_url parameter."
+            return {"error": "No Jira URL configured. Please set JIRA_URL environment variable or provide jira_url parameter."}
         
         # Construct the Jira REST API endpoint
         endpoint = f"{api_url.rstrip('/')}/rest/api/2/search"
@@ -77,26 +77,33 @@ class SippyJiraIncidentTool(SippyBaseTool):
                 
                 data = response.json()
                 
-                # Format the response
-                return self._format_jira_incidents(data)
+                # Add the user-friendly browse URL to each issue
+                if "issues" in data and isinstance(data["issues"], list):
+                    jira_base = api_url.rstrip('/')
+                    for issue in data["issues"]:
+                        if "key" in issue:
+                            issue["browse_url"] = f"{jira_base}/browse/{issue['key']}"
+
+                # Return the raw JSON data
+                return data
                 
         except httpx.HTTPStatusError as e:
             logger.error(f"HTTP error querying Jira: {e}")
             if e.response.status_code == 401:
-                return "Error: Jira authentication failed. Check JIRA_USERNAME and JIRA_TOKEN environment variables."
+                return {"error": "Jira authentication failed. Check JIRA_USERNAME and JIRA_TOKEN environment variables."}
             elif e.response.status_code == 403:
-                return "Error: Access denied to Jira. You may need authentication or permissions to view TRT project."
+                return {"error": "Access denied to Jira. You may need authentication or permissions to view TRT project."}
             else:
-                return f"Error: HTTP {e.response.status_code} - {e.response.text}"
+                return {"error": f"HTTP {e.response.status_code} - {e.response.text}"}
         except httpx.RequestError as e:
             logger.error(f"Request error querying Jira: {e}")
-            return f"Error: Failed to connect to Jira at {api_url} - {str(e)}"
+            return {"error": f"Failed to connect to Jira at {api_url} - {str(e)}"}
         except json.JSONDecodeError as e:
             logger.error(f"JSON decode error: {e}")
-            return f"Error: Invalid JSON response from Jira API"
+            return {"error": "Invalid JSON response from Jira API"}
         except Exception as e:
             logger.error(f"Unexpected error querying Jira: {e}")
-            return f"Error: Unexpected error - {str(e)}"
+            return {"error": f"Unexpected error - {str(e)}"}
 
     def _format_jira_incidents(self, data: Dict[str, Any]) -> str:
         """Format the Jira incidents for display."""

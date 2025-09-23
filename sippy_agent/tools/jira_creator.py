@@ -5,7 +5,7 @@ Tool for creating Jira tickets in the TRT project and other projects.
 import json
 import logging
 import os
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional, Type, Union
 from pydantic import Field, validator
 import httpx
 
@@ -19,7 +19,8 @@ class SippyJiraTicketCreatorTool(SippyBaseTool):
     
     name: str = "create_jira_ticket"
     description: str = (
-        "Create a Jira ticket. IMPORTANT: This tool MUST ask for user confirmation before creating any ticket. "
+        "Create a Jira ticket. Returns a JSON object with the new ticket's key and URL upon successful creation. "
+        "IMPORTANT: This tool MUST ask for user confirmation before creating any ticket. "
         "Never create more than one ticket per chat session. Use this only when the user explicitly requests "
         "ticket creation or when you've identified a critical issue that needs tracking."
     )
@@ -81,62 +82,20 @@ class SippyJiraTicketCreatorTool(SippyBaseTool):
         # Get Jira token from environment
         self.jira_token = os.getenv('JIRA_TOKEN')
     
-    def _run(self, *args, **kwargs: Any) -> str:
+    def _run(self, *args, **kwargs: Any) -> Union[str, Dict[str, Any]]:
         """Create a Jira ticket with the specified parameters."""
-        # Debug logging
-        print(f"[DEBUG] Jira ticket creator called with args: {args}")
-        print(f"[DEBUG] Jira ticket creator called with kwargs: {list(kwargs.keys())}")
         
-        # Handle both JSON string input and kwargs input
-        if args and isinstance(args[0], str) and args[0].startswith('{'):
-            # Parse JSON from args[0]
-            try:
-                import json
-                params = json.loads(args[0])
-                print(f"[DEBUG] Parsed JSON params: {list(params.keys())}")
-            except json.JSONDecodeError as e:
-                logger.error(f"Failed to parse JSON from args: {e}")
-                return "❌ **Error**: Invalid JSON input format"
-        elif len(args) >= 3:
-            # Handle positional arguments (project, title, description, ...)
-            params = {
-                'project': args[0],
-                'title': args[1], 
-                'description': args[2],
-                'issue_type': args[3] if len(args) > 3 else 'Story',
-                'priority': args[4] if len(args) > 4 else 'Normal',
-                'labels': args[5] if len(args) > 5 else None,
-                'confirm_creation': args[6] if len(args) > 6 else False
-            }
-            print(f"[DEBUG] Using positional args as params")
-        else:
-            # Use kwargs directly
-            params = kwargs
-            print(f"[DEBUG] Using kwargs as params")
-        
-        # Extract parameters
-        project = params.get('project')
-        title = params.get('title')
-        description = params.get('description')
-        issue_type = params.get('issue_type', 'Story')
-        priority = params.get('priority', 'Normal')
-        labels = params.get('labels')
-        confirm_creation = params.get('confirm_creation', False)
-        
-        print(f"[DEBUG] Final extracted parameters: project='{project}', title='{title[:50] if title else None}...', issue_type='{issue_type}', priority='{priority}', confirm_creation={confirm_creation}")
-        logger.info(f"Jira ticket creator final params: project='{project}', issue_type='{issue_type}', priority='{priority}', confirm_creation={confirm_creation}")
-        
-        # Validate required parameters
-        if not project:
-            logger.error(f"Project validation failed: project='{project}'")
-            return "❌ **Error**: Project is required"
-        if not title:
-            logger.error(f"Title validation failed: title='{title}'")
-            return "❌ **Error**: Title is required"
-        if not description:
-            logger.error(f"Description validation failed: description='{description}'")
-            return "❌ **Error**: Description is required"
-        
+        input_data = {}
+        if args and isinstance(args[0], dict):
+            input_data.update(args[0])
+        input_data.update(kwargs)
+
+        try:
+            # Pydantic model will have validated and filled in defaults
+            params = self.JiraTicketInput(**input_data)
+        except Exception as e:
+            return f"❌ **Error**: Invalid input parameters: {e}"
+
         # Check session limit
         if self._tickets_created_in_session >= 1:
             return (
@@ -146,9 +105,12 @@ class SippyJiraTicketCreatorTool(SippyBaseTool):
             )
         
         # Require user confirmation
-        if not confirm_creation:
+        if not params.confirm_creation:
             # Prepare ticket summary for user review
-            summary = self._format_ticket_preview(project, title, description, issue_type, priority, labels)
+            summary = self._format_ticket_preview(
+                params.project, params.title, params.description, 
+                params.issue_type, params.priority, params.labels
+            )
             return (
                 f"{summary}\n\n"
                 "⚠️ **User Confirmation Required**: I need your explicit approval before creating this Jira ticket. "
@@ -160,34 +122,34 @@ class SippyJiraTicketCreatorTool(SippyBaseTool):
         # Check for Jira token
         if not self.jira_token:
             logger.error("No Jira token found in environment variable JIRA_TOKEN")
-            return (
-                "❌ **Authentication Error**: No Jira token found. Please set the JIRA_TOKEN environment variable "
-                "with your Jira API token to create tickets."
-            )
+            return {
+                "error": "Authentication Error: No Jira token found. Please set the JIRA_TOKEN environment variable."
+            }
         
         try:
             # Create the ticket
-            logger.info(f"Attempting to create Jira ticket in project '{project}' with title '{title[:50]}...'")
-            ticket_key = self._create_jira_ticket(project, title, description, issue_type, priority, labels)
+            logger.info(f"Attempting to create Jira ticket in project '{params.project}' with title '{params.title[:50]}...'")
+            ticket_key = self._create_jira_ticket(
+                params.project, params.title, params.description, 
+                params.issue_type, params.priority, params.labels
+            )
             
             # Increment session counter
             self._tickets_created_in_session += 1
             
-            # Format success response
+            # Format success response as JSON
             jira_base = self.jira_url.rstrip('/')
-            return (
-                f"✅ **Jira Ticket Created Successfully!**\n\n"
-                f"🎫 **Ticket**: {ticket_key}\n"
-                f"📋 **Project**: {project}\n"
-                f"📝 **Title**: {title}\n"
-                f"🔗 **Link**: {jira_base}/browse/{ticket_key}\n\n"
-                f"The ticket has been created and is now available in Jira. "
-                f"This is the only ticket I can create in this chat session."
-            )
+            return {
+                "message": "Jira Ticket Created Successfully!",
+                "ticket_key": ticket_key,
+                "project": params.project,
+                "title": params.title,
+                "url": f"{jira_base}/browse/{ticket_key}",
+            }
             
         except Exception as e:
             logger.error(f"Error creating Jira ticket: {e}")
-            return f"❌ **Error Creating Ticket**: {str(e)}"
+            return {"error": f"Error Creating Ticket: {str(e)}"}
     
     def _format_ticket_preview(
         self, 

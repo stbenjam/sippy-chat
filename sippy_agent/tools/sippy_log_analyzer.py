@@ -18,13 +18,13 @@ class SippyLogAnalyzerTool(SippyBaseTool):
     """Tool for analyzing job artifacts and logs from Sippy API using the /api/jobs/artifacts endpoint."""
 
     name: str = "analyze_job_logs"
-    description: str = "Search job artifacts for patterns. Input: numeric job ID, optional path_glob and text_regex"
+    description: str = "Get a JSON object with artifact search results for a given Prow job. Input: numeric job ID, optional path_glob and text_regex"
 
     # Add sippy_api_url as a proper field
     sippy_api_url: Optional[str] = Field(default=None, description="Sippy API base URL")
 
     # Simple cache to prevent redundant API calls
-    _cache: Dict[str, str] = {}
+    _cache: Dict[str, Dict[str, Any]] = {}
     
     class LogAnalyzerInput(SippyToolInput):
         prow_job_run_id: str = Field(description="Numeric prow job run ID only (e.g., 1934795512955801600)")
@@ -40,7 +40,7 @@ class SippyLogAnalyzerTool(SippyBaseTool):
     
     args_schema: Type[SippyToolInput] = LogAnalyzerInput
     
-    def _run(self, *args, **kwargs: Any) -> str:
+    def _run(self, *args, **kwargs: Any) -> Dict[str, Any]:
         """Fetch and analyze job artifacts from Sippy API."""
         
         input_data = {}
@@ -55,7 +55,7 @@ class SippyLogAnalyzerTool(SippyBaseTool):
         api_url = args.sippy_api_url or self.sippy_api_url
 
         if not api_url:
-            return "Error: No Sippy API URL configured. Please set SIPPY_API_URL environment variable or provide sippy_api_url parameter."
+            return {"error": "No Sippy API URL configured. Please set SIPPY_API_URL environment variable or provide sippy_api_url parameter."}
 
         # Clean and validate the job ID - ensure it's just the numeric ID
         clean_job_id = str(args.prow_job_run_id).strip()
@@ -65,13 +65,14 @@ class SippyLogAnalyzerTool(SippyBaseTool):
         if job_id_match:
             clean_job_id = job_id_match.group(1)
         elif not clean_job_id.isdigit():
-            return f"Error: Invalid job ID format. Expected numeric ID, got: {args.prow_job_run_id}"
+            return {"error": f"Invalid job ID format. Expected numeric ID, got: {args.prow_job_run_id}"}
 
         # Create cache key to prevent redundant calls
         cache_key = f"{clean_job_id}:{args.path_glob}:{args.text_regex}"
         if cache_key in self._cache:
             logger.info(f"Returning cached result for {cache_key}")
-            return f"[CACHED RESULT]\n{self._cache[cache_key]}"
+            # The cache stores the JSON dict, not a string
+            return self._cache[cache_key]
         
         # Construct the API endpoint
         endpoint = f"{api_url.rstrip('/')}/api/jobs/artifacts"
@@ -93,26 +94,23 @@ class SippyLogAnalyzerTool(SippyBaseTool):
                 # The response should be JSON containing the matched artifacts
                 data = response.json()
 
-                # Format the response for better readability
-                result = format_log_analysis(data, clean_job_id, args.path_glob, args.text_regex)
-
                 # Cache the result to prevent redundant calls
-                self._cache[cache_key] = result
+                self._cache[cache_key] = data
 
-                return result
+                return data
                 
         except httpx.HTTPStatusError as e:
             logger.error(f"HTTP error analyzing logs: {e}")
-            return f"Error: HTTP {e.response.status_code} - {e.response.text}"
+            return {"error": f"HTTP {e.response.status_code} - {e.response.text}"}
         except httpx.RequestError as e:
             logger.error(f"Request error analyzing logs: {e}")
-            return f"Error: Failed to connect to Sippy API at {api_url} - {str(e)}"
+            return {"error": f"Failed to connect to Sippy API at {api_url} - {str(e)}"}
         except json.JSONDecodeError as e:
             logger.error(f"JSON decode error: {e}")
-            return f"Error: Invalid JSON response from Sippy API"
+            return {"error": "Invalid JSON response from Sippy API"}
         except Exception as e:
             logger.error(f"Unexpected error analyzing logs: {e}")
-            return f"Error: Unexpected error - {str(e)}"
+            return {"error": f"Unexpected error - {str(e)}"}
 
     def get_aggregated_junit_url(self, prow_job_run_id: str, sippy_api_url: Optional[str] = None) -> str:
         """Get the direct URL to the junit-aggregated.xml file for an aggregated job."""

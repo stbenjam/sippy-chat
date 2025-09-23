@@ -18,7 +18,7 @@ class SippyReleasesTool(SippyBaseTool):
     """Tool for getting OpenShift release information from Sippy API."""
 
     name: str = "get_release_info"
-    description: str = "Get OpenShift release information including available releases, GA dates, and development start dates. Returns all release data from the Sippy API. No parameters required."
+    description: str = "Get a JSON object with OpenShift release information including available releases, GA dates, and development start dates. No parameters required."
 
     # Add sippy_api_url as a proper field
     sippy_api_url: Optional[str] = Field(default=None, description="Sippy API base URL")
@@ -28,10 +28,10 @@ class SippyReleasesTool(SippyBaseTool):
 
     args_schema: Type[SippyToolInput] = ReleasesInput
 
-    def _run(self, *args, **kwargs: Any) -> str:
+    def _run(self, *args, **kwargs: Any) -> Dict[str, Any]:
         """Get release information from Sippy API."""
         if not self.sippy_api_url:
-            return "Error: No Sippy API URL configured. Please set SIPPY_API_URL environment variable."
+            return {"error": "No Sippy API URL configured. Please set SIPPY_API_URL environment variable."}
         
         # Construct the API endpoint
         endpoint = f"{self.sippy_api_url.rstrip('/')}/api/releases"
@@ -45,21 +45,21 @@ class SippyReleasesTool(SippyBaseTool):
                 
                 data = response.json()
 
-                # Always return all releases data
-                return self._format_all_releases_response(data)
+                # Return the raw JSON data
+                return data
                 
         except httpx.HTTPStatusError as e:
             logger.error(f"HTTP error getting release info: {e}")
-            return f"Error: HTTP {e.response.status_code} - {e.response.text}"
+            return {"error": f"HTTP {e.response.status_code} - {e.response.text}"}
         except httpx.RequestError as e:
             logger.error(f"Request error getting release info: {e}")
-            return f"Error: Failed to connect to Sippy API at {self.sippy_api_url} - {str(e)}"
+            return {"error": f"Failed to connect to Sippy API at {self.sippy_api_url} - {str(e)}"}
         except json.JSONDecodeError as e:
             logger.error(f"JSON decode error: {e}")
-            return f"Error: Invalid JSON response from Sippy API"
+            return {"error": "Invalid JSON response from Sippy API"}
         except Exception as e:
             logger.error(f"Unexpected error getting release info: {e}")
-            return f"Error: Unexpected error - {str(e)}"
+            return {"error": f"Unexpected error - {str(e)}"}
     
     def _format_all_releases_response(self, data: Dict[str, Any]) -> str:
         """Format the release response data showing all releases."""
